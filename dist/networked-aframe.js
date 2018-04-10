@@ -1883,12 +1883,12 @@
 
 	      try {
 	        for (var _iterator = this.positionComponents[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-	          var _posComp = _step.value;
+	          var posComp = _step.value;
 
-	          var progress = (now - _posComp.lastUpdated) / _posComp.duration;
+	          var progress = (now - posComp.lastUpdated) / posComp.duration;
 
 	          if (progress <= 1) {
-	            _posComp.el.object3D.position.lerpVectors(_posComp.start, _posComp.target, progress);
+	            posComp.el.object3D.position.lerpVectors(posComp.start, posComp.target, progress);
 	          }
 	        }
 	      } catch (err) {
@@ -1946,7 +1946,7 @@
 	          var progress = (now - scaleComp.lastUpdated) / scaleComp.duration;
 
 	          if (progress <= 1) {
-	            scaleComp.el.object3D.scale.lerpVectors(scaleComp.start, posComp.target, progress);
+	            scaleComp.el.object3D.scale.lerpVectors(scaleComp.start, scaleComp.target, progress);
 	          }
 	        }
 	      } catch (err) {
