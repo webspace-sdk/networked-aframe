@@ -242,8 +242,8 @@ To spruce up your world add the following HTML tags:
 
 ```html
 <!-- Add to bottom of the a-assets tag -->
-<img id="grid" src="https://img.gs/bbdkhfbzkk/stretch/https://i.imgur.com/25P1geh.png" crossorigin="anonymous">
-<img id="sky" src="https://img.gs/bbdkhfbzkk/2048x2048,stretch/http://i.imgur.com/WqlqEkq.jpg" crossorigin="anonymous" />
+<img id="grid" src="assets/grid.png" />
+<img id="sky" src="assets/sky.png" />
 
 <!-- Add to bottom of a-scene tag -->
 <a-entity position="0 0 0"
