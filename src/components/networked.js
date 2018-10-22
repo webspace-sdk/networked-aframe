@@ -44,9 +44,6 @@ AFRAME.registerComponent('networked', {
     this.conversionEuler = new THREE.Euler();
     this.conversionEuler.order = "YXZ";
     this.bufferInfos = [];
-    this.bufferPosition = new THREE.Vector3();
-    this.bufferQuaternion = new THREE.Quaternion();
-    this.bufferScale = new THREE.Vector3();
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -185,14 +182,21 @@ AFRAME.registerComponent('networked', {
         var object3D = bufferInfo.object3D;
         var componentNames = bufferInfo.componentNames;
         buffer.update(dt);
-        if (componentNames.includes('position')) {
+        let shouldUpdateMatrix = false;
+        if (componentNames.includes('position') && !bufferInfo.lastPosition.equals(object3D.position)) {
           object3D.position.copy(buffer.getPosition());
+          shouldUpdateMatrix = true;
         }
-        if (componentNames.includes('rotation')) {
+        if (componentNames.includes('rotation') && !bufferInfo.lastQuaternion.equals(object3D.quaternion)) {
           object3D.quaternion.copy(buffer.getQuaternion());
+          shouldUpdateMatrix = true;
         }
-        if (componentNames.includes('scale')) {
+        if (componentNames.includes('scale') && !bufferInfo.lastScale.equals(object3D.scale)) {
           object3D.scale.copy(buffer.getScale());
+          shouldUpdateMatrix = true;
+        }
+        if (shouldUpdateMatrix) {
+          object3D.updateMatrix();
         }
       }
     }
@@ -389,8 +393,12 @@ AFRAME.registerComponent('networked', {
 
     var bufferInfo = this.bufferInfos.find((info) => info.object3D === el.object3D);
     if (!bufferInfo) {
+      el.object3D.matrixAutoUpdate = false;
       bufferInfo = { buffer: new InterpolationBuffer(InterpolationBuffer.MODE_LERP, 0.1),
                      object3D: el.object3D,
+                     lastPosition: new THREE.Vector3(),
+                     lastQuaternion: new THREE.Quaternion(),
+                     lastScale: new THREE.Vector3(),
                      componentNames: [componentName] };
       this.bufferInfos.push(bufferInfo);
     } else {
@@ -403,14 +411,17 @@ AFRAME.registerComponent('networked', {
 
     switch(componentName) {
       case 'position':
-        buffer.setPosition(this.bufferPosition.set(data.x, data.y, data.z));
+        bufferInfo.lastPosition.set(data.x, data.y, data.z);
+        buffer.setPosition(bufferInfo.lastPosition);
         return;
       case 'rotation':
         this.conversionEuler.set(DEG2RAD * data.x, DEG2RAD * data.y, DEG2RAD * data.z);
-        buffer.setQuaternion(this.bufferQuaternion.setFromEuler(this.conversionEuler));
+        bufferInfo.lastQuaternion.setFromEuler(this.conversionEuler)
+        buffer.setQuaternion(bufferInfo.lastQuaternion);
         return;
       case 'scale':
-        buffer.setScale(this.bufferScale.set(data.x, data.y, data.z));
+        bufferInfo.lastScale.set(data.x, data.y, data.z)
+        buffer.setScale(bufferInfo.lastScale);
         return;
     }
     NAF.log.error('Could not set value in interpolation buffer.', el, componentName, data, bufferInfo);
