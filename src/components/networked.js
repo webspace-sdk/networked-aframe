@@ -22,6 +22,7 @@ AFRAME.registerComponent('networked', {
     template: {default: ''},
     attachTemplateToLocal: { default: true },
 
+    matrixAutoUpdate: { default: false },
     networkId: {default: ''},
     owner: {default: ''},
   },
@@ -195,7 +196,7 @@ AFRAME.registerComponent('networked', {
           object3D.scale.copy(buffer.getScale());
           shouldUpdateMatrix = true;
         }
-        if (shouldUpdateMatrix) {
+        if (shouldUpdateMatrix && !this.data.matrixAutoUpdate) {
           object3D.updateMatrix();
         }
       }
@@ -310,6 +311,7 @@ AFRAME.registerComponent('networked', {
     syncData.parent = this.getParentId();
     syncData.components = components;
     syncData.isFirstSync = !!isFirstSync;
+    syncData.matrixAutoUpdate = data.matrixAutoUpdate;
     return syncData;
   },
 
@@ -393,7 +395,7 @@ AFRAME.registerComponent('networked', {
 
     var bufferInfo = this.bufferInfos.find((info) => info.object3D === el.object3D);
     if (!bufferInfo) {
-      el.object3D.matrixAutoUpdate = false;
+      el.object3D.matrixAutoUpdate = this.data.matrixAutoUpdate;
       bufferInfo = { buffer: new InterpolationBuffer(InterpolationBuffer.MODE_LERP, 0.1),
                      object3D: el.object3D,
                      lastPosition: new THREE.Vector3(),
