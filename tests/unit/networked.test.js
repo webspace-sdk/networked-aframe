@@ -142,7 +142,8 @@ suite('networked', function() {
           0: { x: 1, y: 2, z: 3 },
           1: { x: 4, y: 3, z: 2 }
         },
-        isFirstSync: false
+        isFirstSync: false,
+        matrixAutoUpdate: false
       };
 
       networked.init();
@@ -179,7 +180,8 @@ suite('networked', function() {
         components: {
           1: { x: 9, y: 8, z: 7 }
         },
-        isFirstSync: false
+        isFirstSync: false,
+        matrixAutoUpdate: false
       };
 
       networked.init();
