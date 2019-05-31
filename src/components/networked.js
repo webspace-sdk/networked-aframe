@@ -497,7 +497,7 @@ AFRAME.registerComponent('networked', {
 
   disableLerp: function() {
     if (!NAF.options.useLerp) {
-      NAF.log.warn("Enabling lerp on object when global NAF useLerp setting is false");
+      NAF.log.warn("Disabling lerp on object when global NAF useLerp setting is false");
       return;
     }
 
