@@ -21,7 +21,7 @@ AFRAME.registerSystem("networked", {
   init() {
     this.components = [];
     this.nextSyncTime = 0;
-    this.enableLerp = true;
+    this._enableLerp = true;
   },
 
   register(component) {
@@ -231,7 +231,7 @@ AFRAME.registerComponent('networked', {
   },
 
   tick: function(time, dt) {
-    if (!this.isMine() && NAF.options.useLerp && this.enableLerp) {
+    if (!this.isMine() && NAF.options.useLerp && this._enableLerp) {
       for (var i = 0; i < this.bufferInfos.length; i++) {
         var bufferInfo = this.bufferInfos[i];
         var buffer = bufferInfo.buffer;
@@ -443,7 +443,7 @@ AFRAME.registerComponent('networked', {
   },
 
   updateNetworkedComponent: function (el, componentName, data, value) {
-    if(!NAF.options.useLerp || !this.enableLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
+    if(!NAF.options.useLerp || !this._enableLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
       if (value === undefined) {
         el.setAttribute(componentName, data);
       } else {
@@ -501,7 +501,7 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
-    this.enableLerp = true;
+    this._enableLerp = true;
   },
 
   disableLerp: function() {
@@ -510,7 +510,7 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
-    this.enableLerp = false;
+    this._enableLerp = false;
   },
 
   remove: function () {
