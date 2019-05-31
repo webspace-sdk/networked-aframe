@@ -21,6 +21,7 @@ AFRAME.registerSystem("networked", {
   init() {
     this.components = [];
     this.nextSyncTime = 0;
+    this.disableLerp = false;
   },
 
   register(component) {
