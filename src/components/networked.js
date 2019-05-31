@@ -21,7 +21,7 @@ AFRAME.registerSystem("networked", {
   init() {
     this.components = [];
     this.nextSyncTime = 0;
-    this.disableLerp = false;
+    this.enableLerp = true;
   },
 
   register(component) {
@@ -231,7 +231,7 @@ AFRAME.registerComponent('networked', {
   },
 
   tick: function(time, dt) {
-    if (!this.isMine() && NAF.options.useLerp && !this.disableLerp) {
+    if (!this.isMine() && NAF.options.useLerp && this.enableLerp) {
       for (var i = 0; i < this.bufferInfos.length; i++) {
         var bufferInfo = this.bufferInfos[i];
         var buffer = bufferInfo.buffer;
@@ -443,7 +443,7 @@ AFRAME.registerComponent('networked', {
   },
 
   updateNetworkedComponent: function (el, componentName, data, value) {
-    if(!NAF.options.useLerp || this.disableLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
+    if(!NAF.options.useLerp || !this.enableLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
       if (value === undefined) {
         el.setAttribute(componentName, data);
       } else {
@@ -495,22 +495,22 @@ AFRAME.registerComponent('networked', {
     this.bufferInfos = [];
   },
 
-  disableLerp: function() {
-    if (!NAF.options.useLerp) {
-      NAF.log.warn("Disabling lerp on object when global NAF useLerp setting is false");
-      return;
-    }
-
-    this.disableLerp = true;
-  },
-
   enableLerp: function() {
     if (!NAF.options.useLerp) {
       NAF.log.warn("Enabling lerp on object when global NAF useLerp setting is false");
       return;
     }
 
-    this.disableLerp = false;
+    this.enableLerp = true;
+  },
+
+  disableLerp: function() {
+    if (!NAF.options.useLerp) {
+      NAF.log.warn("Disabling lerp on object when global NAF useLerp setting is false");
+      return;
+    }
+
+    this.enableLerp = false;
   },
 
   remove: function () {
