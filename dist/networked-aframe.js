@@ -1741,6 +1741,7 @@
 	  init: function init() {
 	    this.components = [];
 	    this.nextSyncTime = 0;
+	    this.enableLerp = true;
 	  },
 	  register: function register(component) {
 	    this.components.push(component);
@@ -1953,7 +1954,7 @@
 	  },
 
 	  tick: function tick(time, dt) {
-	    if (!this.isMine() && NAF.options.useLerp) {
+	    if (!this.isMine() && NAF.options.useLerp && this.enableLerp) {
 	      for (var i = 0; i < this.bufferInfos.length; i++) {
 	        var bufferInfo = this.bufferInfos[i];
 	        var buffer = bufferInfo.buffer;
@@ -2166,7 +2167,7 @@
 	  },
 
 	  updateNetworkedComponent: function updateNetworkedComponent(el, componentName, data, value) {
-	    if (!NAF.options.useLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
+	    if (!NAF.options.useLerp || !this.enableLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
 	      if (value === undefined) {
 	        el.setAttribute(componentName, data);
 	      } else {
@@ -2216,6 +2217,24 @@
 
 	  removeLerp: function removeLerp() {
 	    this.bufferInfos = [];
+	  },
+
+	  enableLerp: function enableLerp() {
+	    if (!NAF.options.useLerp) {
+	      NAF.log.warn("Enabling lerp on object when global NAF useLerp setting is false");
+	      return;
+	    }
+
+	    this.enableLerp = true;
+	  },
+
+	  disableLerp: function disableLerp() {
+	    if (!NAF.options.useLerp) {
+	      NAF.log.warn("Disabling lerp on object when global NAF useLerp setting is false");
+	      return;
+	    }
+
+	    this.enableLerp = false;
 	  },
 
 	  remove: function remove() {
