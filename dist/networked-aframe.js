@@ -581,7 +581,7 @@
 	          var persists = void 0;
 	          var component = this.entities[id].getAttribute('networked');
 	          if (component && component.persistent) {
-	            persists = NAF.utils.takeOwnership(this.entities[id]);
+	            persists = NAF.utils.isMine(this.entities[id]) || NAF.utils.takeOwnership(this.entities[id]);
 	          }
 	          if (!persists) {
 	            var entity = this.removeEntity(id);
@@ -1996,12 +1996,15 @@
 	        buffer.update(dt);
 	        if (componentNames.includes('position')) {
 	          object3D.position.copy(buffer.getPosition());
+	          object3D.matrixNeedsUpdate = true;
 	        }
 	        if (componentNames.includes('rotation')) {
 	          object3D.quaternion.copy(buffer.getQuaternion());
+	          object3D.matrixNeedsUpdate = true;
 	        }
 	        if (componentNames.includes('scale')) {
 	          object3D.scale.copy(buffer.getScale());
+	          object3D.matrixNeedsUpdate = true;
 	        }
 	      }
 	    }
