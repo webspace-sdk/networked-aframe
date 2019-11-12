@@ -139,6 +139,10 @@ AFRAME.registerComponent('networked', {
       if (this.data.attachTemplateToLocal) {
         this.attachTemplateToLocal();
       }
+      const persistentFirstSync = NAF.entities.getPersistentFirstSync(networkId);
+      if (persistentFirstSync) {
+        this.applyPersistentFirstSync();
+      }
 
       this.registerEntity(this.data.networkId);
     }
