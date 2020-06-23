@@ -8,7 +8,7 @@ function defaultRequiresUpdate() {
   let cachedData = null;
 
   return (newData) => {
-    if (cachedData === null || !deepEqual(cachedData, newData)) {
+    if ((cachedData === null && newData !== null) || !deepEqual(cachedData, newData)) {
       cachedData = AFRAME.utils.clone(newData);
       return true;
     }
