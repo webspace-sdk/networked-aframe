@@ -8,6 +8,13 @@ function defaultRequiresUpdate() {
   let cachedData = null;
 
   return (newData) => {
+    // Initial call here should just cache existing value since this is for delta chacking
+    // after the initial full syncs.
+    if (cachedData === null && newData !== null) {
+      cachedData = AFRAME.utils.clone(newData);
+      return false;
+    }
+
     if ((cachedData === null && newData !== null) || !deepEqual(cachedData, newData)) {
       cachedData = AFRAME.utils.clone(newData);
       return true;
