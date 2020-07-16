@@ -177,7 +177,21 @@ class NetworkEntities {
     if (this.hasEntity(id)) {
       var entity = this.entities[id];
       this.forgetEntity(id);
-      entity.parentNode.removeChild(entity);
+
+      // Remove elements from the bottom up, so A-frame detached them appropriately
+
+      const walk = (n) => {
+        const children = n.children;
+
+        for (let i = 0; i < children.length; i++) {
+          walk(children[i]);
+        }
+
+        n.parentNode.removeChild(n);
+      };
+
+      walk(entity);
+
       return entity;
     } else {
       NAF.log.error("Tried to remove entity I don't have.");
