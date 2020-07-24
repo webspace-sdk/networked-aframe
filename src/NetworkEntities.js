@@ -8,6 +8,8 @@ class NetworkEntities {
     this.childCache = new ChildEntityCache();
     this.onRemoteEntityCreatedEvent = new Event('remoteEntityCreated');
     this._persistentFirstSyncs = {};
+    this.positionNormalizer = null;
+    this.positionDenormalizer = null;
   }
 
   registerEntity(networkId, entity) {
@@ -232,6 +234,11 @@ class NetworkEntities {
         this.removeEntity(id);
       }
     }
+  }
+
+  setPositionNormalizers(normalizer, denormalizer) {
+    this.positionNormalizer = normalizer;
+    this.positionDenormalizer = denormalizer;
   }
 }
 

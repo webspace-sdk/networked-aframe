@@ -232,6 +232,9 @@ AFRAME.registerComponent('networked', {
   },
 
   onConnected: function() {
+    this.positionNormalizer = NAF.entities.positionNormalizer;
+    this.positionDenormalizer = NAF.entities.positionDenormalizer;
+
     if (this.data.owner === '') {
       this.lastOwnerTime = NAF.connection.getServerTime();
       this.el.setAttribute(this.name, { owner: NAF.clientId, creator: NAF.clientId });
@@ -263,15 +266,24 @@ AFRAME.registerComponent('networked', {
         var buffer = bufferInfo.buffer;
         var object3D = bufferInfo.object3D;
         var componentNames = bufferInfo.componentNames;
-        buffer.update(dt);
-        if (componentNames.includes('position')) {
-          object3D.position.copy(buffer.getPosition());
-        }
-        if (componentNames.includes('rotation')) {
-          object3D.quaternion.copy(buffer.getQuaternion());
-        }
-        if (componentNames.includes('scale')) {
-          object3D.scale.copy(buffer.getScale());
+        var lerpDirty = buffer.update(dt);
+
+        if (lerpDirty) {
+          if (componentNames.includes('position')) {
+            let pos = buffer.getPosition();
+
+            if (this.positionDenormalizer) {
+              pos = this.positionDenormalizer(pos, this.el);
+            }
+
+            object3D.position.copy(pos);
+          }
+          if (componentNames.includes('rotation')) {
+            object3D.quaternion.copy(buffer.getQuaternion());
+          }
+          if (componentNames.includes('scale')) {
+            object3D.scale.copy(buffer.getScale());
+          }
         }
       }
     }
@@ -363,7 +375,14 @@ AFRAME.registerComponent('networked', {
       // Call networkUpdatePredicate first so that it can update any cached values in the event of a fullSync.
       if (this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
         componentsData = componentsData || {};
-        componentsData[i] = syncedComponentData;
+
+        let dataToSync = syncedComponentData;
+
+        if (this.positionNormalizer && componentName === "position") {
+          dataToSync = this.positionNormalizer(dataToSync, this.el);
+        }
+
+        componentsData[i] = dataToSync;
       }
     }
 

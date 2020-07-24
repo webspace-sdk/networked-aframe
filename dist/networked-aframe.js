@@ -416,6 +416,8 @@
 	    this.childCache = new ChildEntityCache();
 	    this.onRemoteEntityCreatedEvent = new Event('remoteEntityCreated');
 	    this._persistentFirstSyncs = {};
+	    this.positionNormalizer = null;
+	    this.positionDenormalizer = null;
 	  }
 
 	  _createClass(NetworkEntities, [{
@@ -430,8 +432,6 @@
 
 	      var networkId = entityData.networkId;
 	      var el = NAF.schemas.getCachedTemplate(entityData.template);
-
-	      el.setAttribute('id', 'naf-' + networkId);
 
 	      this.initPosition(el, entityData.components);
 	      this.initRotation(el, entityData.components);
@@ -489,7 +489,7 @@
 
 	      if (this.hasEntity(networkId)) {
 	        this.entities[networkId].components.networked.networkUpdate(entityData);
-	      } else if (entityData.isFirstSync) {
+	      } else if (entityData.isFirstSync && NAF.connection.activeDataChannels[entityData.owner] !== false) {
 	        if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
 	          NAF.log.write('Ignoring first sync from disallowed source', source);
 	        } else {
@@ -546,8 +546,7 @@
 	  }, {
 	    key: 'addEntityToParent',
 	    value: function addEntityToParent(entity, parentId) {
-	      var parentEl = document.getElementById('naf-' + parentId);
-	      parentEl.appendChild(entity);
+	      this.entities[parentId].appendChild(entity);
 	    }
 	  }, {
 	    key: 'addEntityToSceneRoot',
@@ -581,7 +580,7 @@
 	          var persists = void 0;
 	          var component = this.entities[id].getAttribute('networked');
 	          if (component && component.persistent) {
-	            persists = NAF.utils.takeOwnership(this.entities[id]);
+	            persists = NAF.utils.isMine(this.entities[id]) || NAF.utils.takeOwnership(this.entities[id]);
 	          }
 	          if (!persists) {
 	            var entity = this.removeEntity(id);
@@ -599,7 +598,21 @@
 	      if (this.hasEntity(id)) {
 	        var entity = this.entities[id];
 	        this.forgetEntity(id);
-	        entity.parentNode.removeChild(entity);
+
+	        // Remove elements from the bottom up, so A-frame detached them appropriately
+
+	        var walk = function walk(n) {
+	          var children = n.children;
+
+	          for (var i = 0; i < children.length; i++) {
+	            walk(children[i]);
+	          }
+
+	          n.parentNode.removeChild(n);
+	        };
+
+	        walk(entity);
+
 	        return entity;
 	      } else {
 	        NAF.log.error("Tried to remove entity I don't have.");
@@ -646,6 +659,12 @@
 	          this.removeEntity(id);
 	        }
 	      }
+	    }
+	  }, {
+	    key: 'setPositionNormalizers',
+	    value: function setPositionNormalizers(normalizer, denormalizer) {
+	      this.positionNormalizer = normalizer;
+	      this.positionDenormalizer = denormalizer;
 	    }
 	  }]);
 
@@ -1752,7 +1771,14 @@
 	  var cachedData = null;
 
 	  return function (newData) {
-	    if (cachedData === null || !deepEqual(cachedData, newData)) {
+	    // Initial call here should just cache existing value since this is for delta chacking
+	    // after the initial full syncs.
+	    if (cachedData === null && newData !== null) {
+	      cachedData = AFRAME.utils.clone(newData);
+	      return false;
+	    }
+
+	    if (cachedData === null && newData !== null || !deepEqual(cachedData, newData)) {
 	      cachedData = AFRAME.utils.clone(newData);
 	      return true;
 	    }
@@ -1763,6 +1789,7 @@
 
 	AFRAME.registerSystem("networked", {
 	  init: function init() {
+	    // An array of "networked" component instances.
 	    this.components = [];
 	    this.nextSyncTime = 0;
 	  },
@@ -1784,6 +1811,7 @@
 	      if (!NAF.connection.adapter) return;
 	      if (this.el.clock.elapsedTime < this.nextSyncTime) return;
 
+	      // "d" is an array of entity datas per entity in this.components.
 	      var data = { d: [] };
 
 	      for (var i = 0, l = this.components.length; i < l; i++) {
@@ -1863,8 +1891,17 @@
 
 	    this.initNetworkParent();
 
+	    var networkId = void 0;
+
 	    if (this.data.networkId === '') {
-	      this.el.setAttribute(this.name, { networkId: NAF.utils.createNetworkId() });
+	      networkId = NAF.utils.createNetworkId();
+	      this.el.setAttribute(this.name, { networkId: networkId });
+	    } else {
+	      networkId = this.data.networkId;
+	    }
+
+	    if (!this.el.id) {
+	      this.el.setAttribute('id', 'naf-' + networkId);
 	    }
 
 	    if (wasCreatedByNetwork) {
@@ -1962,6 +1999,9 @@
 	  onConnected: function onConnected() {
 	    var _this = this;
 
+	    this.positionNormalizer = NAF.entities.positionNormalizer;
+	    this.positionDenormalizer = NAF.entities.positionDenormalizer;
+
 	    if (this.data.owner === '') {
 	      this.lastOwnerTime = NAF.connection.getServerTime();
 	      this.el.setAttribute(this.name, { owner: NAF.clientId, creator: NAF.clientId });
@@ -1993,15 +2033,24 @@
 	        var buffer = bufferInfo.buffer;
 	        var object3D = bufferInfo.object3D;
 	        var componentNames = bufferInfo.componentNames;
-	        buffer.update(dt);
-	        if (componentNames.includes('position')) {
-	          object3D.position.copy(buffer.getPosition());
-	        }
-	        if (componentNames.includes('rotation')) {
-	          object3D.quaternion.copy(buffer.getQuaternion());
-	        }
-	        if (componentNames.includes('scale')) {
-	          object3D.scale.copy(buffer.getScale());
+	        var lerpDirty = buffer.update(dt);
+
+	        if (lerpDirty) {
+	          if (componentNames.includes('position')) {
+	            var pos = buffer.getPosition();
+
+	            if (this.positionDenormalizer) {
+	              pos = this.positionDenormalizer(pos, this.el);
+	            }
+
+	            object3D.position.copy(pos);
+	          }
+	          if (componentNames.includes('rotation')) {
+	            object3D.quaternion.copy(buffer.getQuaternion());
+	          }
+	          if (componentNames.includes('scale')) {
+	            object3D.scale.copy(buffer.getScale());
+	          }
 	        }
 	      }
 	    }
@@ -2093,7 +2142,14 @@
 	      // Call networkUpdatePredicate first so that it can update any cached values in the event of a fullSync.
 	      if (this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
 	        componentsData = componentsData || {};
-	        componentsData[i] = syncedComponentData;
+
+	        var dataToSync = syncedComponentData;
+
+	        if (this.positionNormalizer && componentName === "position") {
+	          dataToSync = this.positionNormalizer(dataToSync, this.el);
+	        }
+
+	        componentsData[i] = dataToSync;
 	      }
 	    }
 
