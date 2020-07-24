@@ -265,7 +265,7 @@ AFRAME.registerComponent('networked', {
         var buffer = bufferInfo.buffer;
         var object3D = bufferInfo.object3D;
         var componentNames = bufferInfo.componentNames;
-        var lerpDirty = buffer.update(dt, NAF.utils.maxLerpDistance);
+        var lerpDirty = buffer.update(dt, NAF.options.maxLerpDistance);
 
         if (lerpDirty) {
           if (componentNames.includes('position')) {
