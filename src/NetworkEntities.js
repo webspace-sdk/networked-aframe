@@ -9,7 +9,6 @@ class NetworkEntities {
     this.onRemoteEntityCreatedEvent = new Event('remoteEntityCreated');
     this._persistentFirstSyncs = {};
     this.positionNormalizer = null;
-    this.positionDenormalizer = null;
   }
 
   registerEntity(networkId, entity) {
@@ -236,9 +235,8 @@ class NetworkEntities {
     }
   }
 
-  setPositionNormalizers(normalizer, denormalizer) {
+  setPositionNormalizer(normalizer) {
     this.positionNormalizer = normalizer;
-    this.positionDenormalizer = denormalizer;
   }
 }
 
