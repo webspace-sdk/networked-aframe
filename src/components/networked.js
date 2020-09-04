@@ -233,6 +233,7 @@ AFRAME.registerComponent('networked', {
 
   onConnected: function() {
     this.positionNormalizer = NAF.entities.positionNormalizer;
+    this.positionDenormalizer = NAF.entities.positionDenormalizer;
 
     if (this.data.owner === '') {
       this.lastOwnerTime = NAF.connection.getServerTime();
@@ -269,7 +270,13 @@ AFRAME.registerComponent('networked', {
 
         if (lerpDirty) {
           if (componentNames.includes('position')) {
-            object3D.position.copy(buffer.getPosition());
+            let position = buffer.getPosition();
+
+            if (this.positionDenormalizer) {
+              position = this.positionDenormalizer(position, object3D.position);
+            }
+
+            object3D.position.copy(position);
           }
           if (componentNames.includes('rotation')) {
             object3D.quaternion.copy(buffer.getQuaternion());
