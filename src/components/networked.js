@@ -238,6 +238,7 @@ AFRAME.registerComponent('networked', {
     if (this.data.owner === '') {
       this.lastOwnerTime = NAF.connection.getServerTime();
       this.el.setAttribute(this.name, { owner: NAF.clientId, creator: NAF.clientId });
+      this.el.object3D.matrixNeedsUpdate = true;
       setTimeout(() => {
         //a-primitives attach their components on the next frame; wait for components to be attached before calling syncAll
         if (!this.el.parentNode){
@@ -269,6 +270,8 @@ AFRAME.registerComponent('networked', {
         var lerpDirty = buffer.update(dt, NAF.options.maxLerpDistance);
 
         if (lerpDirty) {
+          let changed = false;
+
           if (componentNames.includes('position')) {
             let position = buffer.getPosition();
 
@@ -276,13 +279,20 @@ AFRAME.registerComponent('networked', {
               position = this.positionDenormalizer(position, object3D.position);
             }
 
+            changed = true;
             object3D.position.copy(position);
           }
           if (componentNames.includes('rotation')) {
+            changed = true;
             object3D.quaternion.copy(buffer.getQuaternion());
           }
           if (componentNames.includes('scale')) {
+            changed = true;
             object3D.scale.copy(buffer.getScale());
+          }
+
+          if (changed) {
+            object3D.matrixNeedsUpdate = true;
           }
         }
       }
@@ -494,6 +504,9 @@ AFRAME.registerComponent('networked', {
       } else {
         el.setAttribute(componentName, data, value);
       }
+
+      el.object3D.matrixNeedsUpdate = true;
+
       return;
     }
 
