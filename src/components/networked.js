@@ -275,20 +275,30 @@ AFRAME.registerComponent('networked', {
           if (componentNames.includes('position')) {
             let position = buffer.getPosition();
 
-            if (this.positionDenormalizer) {
-              position = this.positionDenormalizer(position, object3D.position);
-            }
+            if (position !== null) {
+              if (this.positionDenormalizer) {
+                position = this.positionDenormalizer(position, object3D.position);
+              }
 
-            changed = true;
-            object3D.position.copy(position);
+              changed = true;
+              object3D.position.copy(position);
+            }
           }
           if (componentNames.includes('rotation')) {
-            changed = true;
-            object3D.quaternion.copy(buffer.getQuaternion());
+            const quaternion = buffer.getQuaternion();
+
+            if (quaternion !== null) {
+              changed = true;
+              object3D.quaternion.copy(quaternion);
+            }
           }
           if (componentNames.includes('scale')) {
-            changed = true;
-            object3D.scale.copy(buffer.getScale());
+            const scale = buffer.getScale();
+
+            if (scale !== null) {
+              changed = true;
+              object3D.scale.copy(scale);
+            }
           }
 
           if (changed) {
