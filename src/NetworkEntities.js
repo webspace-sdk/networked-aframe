@@ -227,12 +227,12 @@ class NetworkEntities {
     return this.entities.hasOwnProperty(id);
   }
 
-  removeRemoteEntities() {
+  removeRemoteEntities(includeOwned = false) {
     this.childCache = new ChildEntityCache();
 
     for (var id in this.entities) {
       var owner = this.entities[id].getAttribute('networked').owner;
-      if (owner != NAF.clientId) {
+      if (includeOwned || owner != NAF.clientId) {
         this.removeEntity(id);
       }
     }
