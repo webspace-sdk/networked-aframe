@@ -32,18 +32,20 @@ class NetworkEntities {
   }
 
   initPosition(entity, componentData) {
-    var hasPosition = componentData.hasOwnProperty('position');
-    if (hasPosition) {
-      var position = componentData.position;
-      entity.setAttribute('position', position);
+    if (componentData[0]) {
+      entity.setAttribute('position', componentData[0]);
     }
   }
 
   initRotation(entity, componentData) {
-    var hasRotation = componentData.hasOwnProperty('rotation');
-    if (hasRotation) {
-      var rotation = componentData.rotation;
-      entity.setAttribute('rotation', rotation);
+    if (componentData[1]) {
+      entity.setAttribute('rotation', componentData[1]);
+    }
+  }
+
+  initScale(entity, componentData) {
+    if (componentData[2]) {
+      entity.setAttribute('scale', componentData[2]);
     }
   }
 
