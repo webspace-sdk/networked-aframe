@@ -22,31 +22,11 @@ class NetworkEntities {
     var networkId = entityData.networkId;
     var el = NAF.schemas.getCachedTemplate(entityData.template);
 
-    this.initPosition(el, entityData.components);
-    this.initRotation(el, entityData.components);
     this.addNetworkComponent(el, entityData);
 
     this.registerEntity(networkId, el);
 
     return el;
-  }
-
-  initPosition(entity, componentData) {
-    if (componentData[0]) {
-      entity.setAttribute('position', componentData[0]);
-    }
-  }
-
-  initRotation(entity, componentData) {
-    if (componentData[1]) {
-      entity.setAttribute('rotation', componentData[1]);
-    }
-  }
-
-  initScale(entity, componentData) {
-    if (componentData[2]) {
-      entity.setAttribute('scale', componentData[2]);
-    }
   }
 
   addNetworkComponent(entity, entityData) {
@@ -180,10 +160,8 @@ class NetworkEntities {
 
     if (this.hasEntity(id)) {
       var entity = this.entities[id];
-      this.forgetEntity(id);
 
       // Remove elements from the bottom up, so A-frame detached them appropriately
-
       const walk = (n) => {
         const children = n.children;
 
@@ -191,7 +169,9 @@ class NetworkEntities {
           walk(children[i]);
         }
 
-        n.parentNode.removeChild(n);
+        if (n.parentNode) {
+          n.parentNode.removeChild(n);
+        }
       };
 
       walk(entity);
@@ -227,11 +207,15 @@ class NetworkEntities {
     return this.entities.hasOwnProperty(id);
   }
 
-  removeRemoteEntities(includeOwned = false) {
+  removeRemoteEntities(includeOwned = false, excludeEntities = []) {
     this.childCache = new ChildEntityCache();
 
     for (var id in this.entities) {
-      var owner = this.entities[id].getAttribute('networked').owner;
+      const entity = this.entities[id];
+      if (excludeEntities.includes(entity)) continue;
+
+      var owner = entity.getAttribute('networked').owner;
+
       if (includeOwned || owner != NAF.clientId) {
         this.removeEntity(id);
       }
