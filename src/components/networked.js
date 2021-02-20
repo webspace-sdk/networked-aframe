@@ -515,7 +515,7 @@ AFRAME.registerComponent('networked', {
     }
 
     if (!lerper) {
-      lerper = new Lerper(10);
+      lerper = new Lerper(NAF.options.updateRate);
       this.lerpers.push({ lerper, object3D: el.object3D });
       lerper.startFrame();
     }
