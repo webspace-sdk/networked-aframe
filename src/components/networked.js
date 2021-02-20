@@ -532,6 +532,8 @@ AFRAME.registerComponent('networked', {
   },
 
   startLerpingFrame: function() {
+    if (!this.lerpers) return;
+
     for (let i = 0; i < this.lerpers.length; i++) {
       this.lerpers[i].lerper.startFrame();
     }
