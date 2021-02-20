@@ -1,9 +1,185 @@
 /* global AFRAME, NAF, THREE */
 var deepEqual = require('../DeepEquals');
-var InterpolationBuffer = require('buffered-interpolation');
 var DEG2RAD = THREE.Math.DEG2RAD;
 var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
 
+const LERP_FRAMES = 30;
+const TYPE_POSITION = 0x1;
+const TYPE_QUATERNION = 0x2;
+const TYPE_SCALE = 0x4;
+const tmpPosition = new THREE.Vector3();
+
+class Lerper {
+  constructor(fps = 10) {
+    this.frames = [];
+    this.frameIndex = -1;
+    this.tmpQuaternion = new THREE.Quaternion();
+    this.running = false;
+
+    for (let i = 0; i < LERP_FRAMES; i++) {
+      // Frames are:
+      // time
+      // type flags
+      // pos x y z
+      // quat x y z w
+      // scale x y z
+      this.frames.push([0, 0, 0.0, 0.0, 0.0, 0.0, 0.0 ,0.0, 0.0, 1.0, 1.0, 1.0]);
+    }
+
+    this.bufferTimeMs = (1000 / fps) * 3;
+  }
+
+  reset() {
+    this.frameIndex = -1;
+
+    for (let i = 0; i < this.frames.length; i++) {
+      this.frames[i][0] = 0;
+    }
+  }
+
+  lerp(start, end, t) {
+    return start + (end - start) * t;
+  }
+
+  startFrame() {
+    this.running = true;
+    this.frameIndex = (this.frameIndex + 1) % this.frames.length;
+
+    const frame = this.frames[this.frameIndex];
+    frame[0] = performance.now();
+    frame[1] = 0; // Flags
+    frame[2] = 0.0;
+    frame[3] = 0.0;
+    frame[4] = 0.0;
+    frame[5] = 0.0;
+    frame[6] = 0.0;
+    frame[7] = 0.0;
+    frame[8] = 0.0;
+    frame[9] = 1.0;
+    frame[10] = 1.0;
+    frame[11] = 1.0;
+  }
+
+  setPosition(x, y, z) {
+    const frame = this.frames[this.frameIndex];
+    frame[1] |= TYPE_POSITION;
+    frame[2] = x;
+    frame[3] = y;
+    frame[4] = z;
+  }
+
+  setQuaternion(x, y, z, w) {
+    const frame = this.frames[this.frameIndex];
+    frame[1] |= TYPE_QUATERNION;
+    frame[5] = x;
+    frame[6] = y;
+    frame[7] = z;
+    frame[8] = w;
+  }
+
+  setScale(x, y, z) {
+    const frame = this.frames[this.frameIndex];
+    frame[1] |= TYPE_SCALE;
+    frame[9] = x;
+    frame[10] = y;
+    frame[11] = z;
+  }
+
+  step(type, target) {
+    if (!this.running) return;
+
+    const { frames } = this;
+    if (this.frameIndex === -1) return;
+
+    const serverTime = performance.now() - this.bufferTimeMs;
+    let olderFrame;
+    let newerFrame;
+
+    for (let i = frames.length; i >= 1; i--) {
+      const idx = (this.frameIndex + i) % this.frames.length;
+      const frame = frames[idx];
+
+      if (frame[0] !== 0 && frame[0] <= serverTime && frame[1] & type) {
+        olderFrame = frame;
+
+        for (let j = 1; j < frames.length; j++) {
+          const nidx = (idx + j) % this.frames.length;
+          // Find the next frame that has this type (pos, rot, scale)
+          if (frames[nidx][1] & type && frames[nidx][0] !== 0 && frames[nidx][0] > olderFrame[0]) {
+            newerFrame = frames[nidx];
+            break;
+          }
+        }
+
+        break;
+      }
+    }
+
+    if (!olderFrame && !newerFrame) return;
+
+    // TODO need to deal with initial frame properly.
+    // A is newer, B is older
+    if (olderFrame && !newerFrame) {
+      // First frame.
+      if (type === TYPE_POSITION) {
+        target.x = olderFrame[2];
+        target.y = olderFrame[3];
+        target.z = olderFrame[4];
+      } else if (type === TYPE_QUATERNION) {
+        target.x = olderFrame[5];
+        target.y = olderFrame[6];
+        target.z = olderFrame[7];
+        target.w = olderFrame[8];
+      } else if (type === TYPE_SCALE) {
+        target.x = olderFrame[9];
+        target.y = olderFrame[10];
+        target.z = olderFrame[11];
+      }
+
+      return;
+    }
+
+    const t0 = newerFrame[0];
+    const t1 = olderFrame[0];
+
+    // THE TIMELINE
+    // t = time (serverTime)
+    // p = entity position
+    // ------ t1 ------ tn --- t0 ----->> NOW
+    // ------ p1 ------ pn --- p0 ----->> NOW
+    // ------ 0% ------ x% --- 100% --->> NOW
+    const zeroPercent = serverTime - t1;
+    const hundredPercent = t0 - t1;
+    const pPercent = zeroPercent / hundredPercent;
+
+    if (type === TYPE_POSITION) {
+      target.x = this.lerp(olderFrame[2], newerFrame[2], pPercent);
+      target.y = this.lerp(olderFrame[3], newerFrame[3], pPercent);
+      target.z = this.lerp(olderFrame[4], newerFrame[4], pPercent);
+    } else if (type === TYPE_QUATERNION) {
+      target.x = olderFrame[5];
+      target.y = olderFrame[6];
+      target.z = olderFrame[7];
+      target.w = olderFrame[8];
+      this.tmpQuaternion.x = newerFrame[5];
+      this.tmpQuaternion.y = newerFrame[6];
+      this.tmpQuaternion.z = newerFrame[7];
+      this.tmpQuaternion.w = newerFrame[8];
+      target.slerp(this.tmpQuaternion, pPercent);
+    } else if (type === TYPE_SCALE) {
+      target.x = this.lerp(olderFrame[9], newerFrame[9], pPercent);
+      target.y = this.lerp(olderFrame[10], newerFrame[10], pPercent);
+      target.z = this.lerp(olderFrame[11], newerFrame[11], pPercent);
+    }
+
+    if (olderFrame && olderFrame[0] !== 0 && serverTime - olderFrame[0] > 5000.0) {
+      // Optimization, stop doing work after older frame is more than 5 seconds old.
+      this.running = false;
+    }
+
+    return true;
+  }
+}
 function defaultRequiresUpdate() {
   let cachedData = null;
 
@@ -264,47 +440,23 @@ AFRAME.registerComponent('networked', {
     if (!this.isMine() && NAF.options.useLerp) {
       for (var i = 0; i < this.bufferInfos.length; i++) {
         var bufferInfo = this.bufferInfos[i];
-        var buffer = bufferInfo.buffer;
+        var lerper = bufferInfo.buffer;
         var object3D = bufferInfo.object3D;
-        var componentNames = bufferInfo.componentNames;
-        var lerpDirty = buffer.update(dt, NAF.options.maxLerpDistance);
 
-        if (lerpDirty) {
-          let changed = false;
+        let pos = tmpPosition;
+        const positionUpdated = lerper.step(TYPE_POSITION, pos);
 
-          if (componentNames.includes('position')) {
-            let position = buffer.getPosition();
-
-            if (position !== null) {
-              if (this.positionDenormalizer) {
-                position = this.positionDenormalizer(position, object3D.position);
-              }
-
-              changed = true;
-              object3D.position.copy(position);
-            }
-          }
-          if (componentNames.includes('rotation')) {
-            const quaternion = buffer.getQuaternion();
-
-            if (quaternion !== null) {
-              changed = true;
-              object3D.quaternion.copy(quaternion);
-            }
-          }
-          if (componentNames.includes('scale')) {
-            const scale = buffer.getScale();
-
-            if (scale !== null) {
-              changed = true;
-              object3D.scale.copy(scale);
-            }
+        if (positionUpdated) {
+          if (this.positionDenormalizer) {
+            pos = this.positionDenormalizer(pos, object3D.position);
           }
 
-          if (changed) {
-            object3D.matrixNeedsUpdate = true;
-          }
+          object3D.position.copy(pos);
         }
+
+        object3D.matrixNeedsUpdate = positionUpdated ||
+          lerper.step(TYPE_QUATERNION, object3D.quaternion) ||
+          lerper.step(TYPE_SCALE, object3D.scale);
       }
     }
   },
@@ -486,6 +638,14 @@ AFRAME.registerComponent('networked', {
   },
 
   updateNetworkedComponents: function(components) {
+    for (let i = 0; i < this.bufferInfos.length; i++) {
+      const lerper = this.bufferInfos[i].buffer;
+
+      if (lerper) {
+        lerper.startFrame();
+      }
+    }
+
     for (var componentIndex = 0, l = this.componentSchemas.length; componentIndex < l; componentIndex++) {
       var componentData = components[componentIndex];
       var componentSchema = this.componentSchemas[componentIndex];
@@ -532,28 +692,24 @@ AFRAME.registerComponent('networked', {
     }
 
     if (!bufferInfo) {
-      bufferInfo = { buffer: new InterpolationBuffer(InterpolationBuffer.MODE_LERP, 0.1),
-                     object3D: el.object3D,
-                     componentNames: [componentName] };
+      bufferInfo = { buffer: new Lerper(10), object3D: el.object3D };
       this.bufferInfos.push(bufferInfo);
-    } else {
-      var componentNames = bufferInfo.componentNames;
-      if (!componentNames.includes(componentName)) {
-        componentNames.push(componentName);
-      }
+      bufferInfo.buffer.startFrame();
     }
-    var buffer = bufferInfo.buffer;
+
+    var lerper = bufferInfo.buffer;
 
     switch(componentName) {
       case 'position':
-        buffer.setPosition(this.bufferPosition.set(data.x, data.y, data.z));
+        lerper.setPosition(data.x, data.y, data.z);
         return;
       case 'rotation':
         this.conversionEuler.set(DEG2RAD * data.x, DEG2RAD * data.y, DEG2RAD * data.z);
-        buffer.setQuaternion(this.bufferQuaternion.setFromEuler(this.conversionEuler));
+        this.bufferQuaternion.setFromEuler(this.conversionEuler)
+        lerper.setQuaternion(this.bufferQuaternion.x, this.bufferQuaternion.y, this.bufferQuaternion.z, this.bufferQuaternion.w);
         return;
       case 'scale':
-        buffer.setScale(this.bufferScale.set(data.x, data.y, data.z));
+        lerper.setScale(data.x, data.y, data.z);
         return;
     }
     NAF.log.error('Could not set value in interpolation buffer.', el, componentName, data, bufferInfo);

@@ -26,7 +26,6 @@
   },
   "repository": "networked-aframe/networked-aframe",
   "dependencies": {
-    "buffered-interpolation": "github:gfodor/buffered-interpolation#feature/lazy-frame-fill",
     "easyrtc": "1.1.0"
   },
   "devDependencies": {
