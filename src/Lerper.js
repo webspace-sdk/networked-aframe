@@ -8,11 +8,12 @@ const tmpQuaternion = new THREE.Quaternion();
 
 // Performs lerp/slerp on frames
 class Lerper {
-  constructor(fps = 10, jitterTolerance = 2.5) {
+  constructor(fps = 10, maxLerpDistance = 100000.0, jitterTolerance = 2.5) {
     this.frames = [];
     this.frameIndex = -1;
     this.running = false;
     this.firstTypeFlags = 0;
+    this.maxLerpDistanceSq = maxLerpDistance * maxLerpDistance;
 
     for (let i = 0; i < LERP_FRAMES; i++) {
       // Frames are:
@@ -154,9 +155,29 @@ class Lerper {
     const pPercent = zeroPercent / hundredPercent;
 
     if (type === TYPE_POSITION) {
-      target.x = this.lerp(olderFrame[2], newerFrame[2], pPercent);
-      target.y = this.lerp(olderFrame[3], newerFrame[3], pPercent);
-      target.z = this.lerp(olderFrame[4], newerFrame[4], pPercent);
+      const oX = olderFrame[2];
+      const oY = olderFrame[3];
+      const oZ = olderFrame[4];
+
+      const nX = newerFrame[2];
+      const nY = newerFrame[3];
+      const nZ = newerFrame[4];
+
+      const dx = oX - nX;
+      const dy = oY - nY;
+      const dz = oZ - nZ;
+
+      const distSq = dx * dx + dy * dy + dz * dz;
+
+      if (distSq >= this.maxLerpDistanceSq) {
+        target.x = nX;
+        target.y = nY;
+        target.z = nZ;
+      } else {
+        target.x = this.lerp(oX, nX, pPercent);
+        target.y = this.lerp(oY, nY, pPercent);
+        target.z = this.lerp(oZ, nZ, pPercent);
+      }
     } else if (type === TYPE_QUATERNION) {
       target.x = olderFrame[5];
       target.y = olderFrame[6];

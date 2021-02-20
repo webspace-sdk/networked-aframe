@@ -6,6 +6,7 @@ var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
 const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper');
 
 const tmpPosition = new THREE.Vector3();
+const tmpQuaternion = new THREE.Quaternion();
 
 function defaultRequiresUpdate() {
   let cachedData = null;
@@ -112,7 +113,6 @@ AFRAME.registerComponent('networked', {
     this.conversionEuler = new THREE.Euler();
     this.conversionEuler.order = "YXZ";
     this.lerpers = [];
-    this.tmpQuaternion = new THREE.Quaternion();
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -264,7 +264,7 @@ AFRAME.registerComponent('networked', {
   tick: function(time, dt) {
     if (!this.isMine() && NAF.options.useLerp) {
       for (var i = 0; i < this.lerpers.length; i++) {
-        var { lerper, object3D } = this.lerpers[i];
+        const { lerper, object3D } = this.lerpers[i];
 
         let pos = tmpPosition;
         const positionUpdated = lerper.step(TYPE_POSITION, pos);
@@ -461,13 +461,7 @@ AFRAME.registerComponent('networked', {
   },
 
   updateNetworkedComponents: function(components) {
-    for (let i = 0; i < this.lerpers.length; i++) {
-      const { lerper } = this.lerpers[i];
-
-      if (lerper) {
-        lerper.startFrame();
-      }
-    }
+    this.startLerpingFrame();
 
     for (var componentIndex = 0, l = this.componentSchemas.length; componentIndex < l; componentIndex++) {
       var componentData = components[componentIndex];
@@ -515,7 +509,7 @@ AFRAME.registerComponent('networked', {
     }
 
     if (!lerper) {
-      lerper = new Lerper(NAF.options.updateRate);
+      lerper = new Lerper(NAF.options.updateRate, NAF.options.maxLerpDistance);
       this.lerpers.push({ lerper, object3D: el.object3D });
       lerper.startFrame();
     }
@@ -526,8 +520,8 @@ AFRAME.registerComponent('networked', {
         return;
       case 'rotation':
         this.conversionEuler.set(DEG2RAD * data.x, DEG2RAD * data.y, DEG2RAD * data.z);
-        this.tmpQuaternion.setFromEuler(this.conversionEuler)
-        lerper.setQuaternion(this.tmpQuaternion.x, this.tmpQuaternion.y, this.tmpQuaternion.z, this.tmpQuaternion.w);
+        tmpQuaternion.setFromEuler(this.conversionEuler)
+        lerper.setQuaternion(tmpQuaternion.x, tmpQuaternion.y, tmpQuaternion.z, tmpQuaternion.w);
         return;
       case 'scale':
         lerper.setScale(data.x, data.y, data.z);
@@ -535,6 +529,12 @@ AFRAME.registerComponent('networked', {
     }
 
     NAF.log.error('Could not set value in interpolation buffer.', el, componentName, data);
+  },
+
+  startLerpingFrame: function() {
+    for (let i = 0; i < this.lerpers.length; i++) {
+      this.lerpers[i].lerper.startFrame();
+    }
   },
 
   removeLerp: function() {
