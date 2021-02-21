@@ -8,7 +8,7 @@ const tmpQuaternion = new THREE.Quaternion();
 
 // Performs lerp/slerp on frames
 class Lerper {
-  constructor(fps = 10, maxLerpDistance = 100000.0, jitterTolerance = 2.5) {
+  constructor(fps = 10, maxLerpDistance = 100000.0, jitterTolerance = 3.0) {
     this.frames = [];
     this.frameIndex = -1;
     this.running = false;
