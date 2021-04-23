@@ -277,9 +277,10 @@ AFRAME.registerComponent('networked', {
           object3D.position.copy(pos);
         }
 
-        object3D.matrixNeedsUpdate = positionUpdated ||
-          lerper.step(TYPE_QUATERNION, object3D.quaternion) ||
-          lerper.step(TYPE_SCALE, object3D.scale);
+        const quaternionUpdated = lerper.step(TYPE_QUATERNION, object3D.quaternion);
+        const scaleUpdated = lerper.step(TYPE_SCALE, object3D.scale);
+
+        object3D.matrixNeedsUpdate = positionUpdated || quaternionUpdated || scaleUpdated;
       }
     }
   },
