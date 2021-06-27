@@ -5,13 +5,14 @@ const TYPE_QUATERNION = 0x2;
 const TYPE_SCALE = 0x4;
 
 const tmpQuaternion = new THREE.Quaternion();
+const MAX_FINAL_FRAME_AWAIT_MS = 350;
 
 // Performs lerp/slerp on frames
 class Lerper {
   constructor(fps = 10, maxLerpDistance = 100000.0, jitterTolerance = 3.0) {
     this.frames = [];
     this.frameIndex = -1;
-    this.running = false;
+    this.running = 0;
     this.firstTypeFlags = 0;
     this.maxLerpDistanceSq = maxLerpDistance * maxLerpDistance;
 
@@ -42,7 +43,6 @@ class Lerper {
   }
 
   startFrame() {
-    this.running = true;
     this.frameIndex = (this.frameIndex + 1) % this.frames.length;
 
     const frame = this.frames[this.frameIndex];
@@ -62,6 +62,7 @@ class Lerper {
 
   setPosition(x, y, z) {
     const frame = this.frames[this.frameIndex];
+    this.running |= TYPE_POSITION;
     frame[1] |= TYPE_POSITION;
     frame[2] = x;
     frame[3] = y;
@@ -70,6 +71,7 @@ class Lerper {
 
   setQuaternion(x, y, z, w) {
     const frame = this.frames[this.frameIndex];
+    this.running |= TYPE_QUATERNION;
     frame[1] |= TYPE_QUATERNION;
     frame[5] = x;
     frame[6] = y;
@@ -79,6 +81,7 @@ class Lerper {
 
   setScale(x, y, z) {
     const frame = this.frames[this.frameIndex];
+    this.running |= TYPE_SCALE;
     frame[1] |= TYPE_SCALE;
     frame[9] = x;
     frame[10] = y;
@@ -86,7 +89,7 @@ class Lerper {
   }
 
   step(type, target) {
-    if (!this.running) return;
+    if ((this.running & type) === 0) return;
 
     const { frames } = this;
     if (this.frameIndex === -1) return;
@@ -104,6 +107,7 @@ class Lerper {
           this.firstTypeFlags |= type;
 
           // First frame.
+
           if (type === TYPE_POSITION) {
             target.x = frame[2];
             target.y = frame[3];
@@ -125,6 +129,7 @@ class Lerper {
         if (frame[0] <= serverTime) {
           olderFrame = frame;
 
+
           for (let j = 1; j < frames.length; j++) {
             const nidx = (idx + j) % this.frames.length;
             // Find the next frame that has this type (pos, rot, scale)
@@ -139,65 +144,84 @@ class Lerper {
       }
     }
 
-    if (!olderFrame || !newerFrame) return;
+    const isFinalFrame = olderFrame && !newerFrame && performance.now() - olderFrame[0] > MAX_FINAL_FRAME_AWAIT_MS;
 
-    const t0 = newerFrame[0];
-    const t1 = olderFrame[0];
+    if (!isFinalFrame && (!olderFrame || !newerFrame)) return;
 
-    // THE TIMELINE
-    // t = time (serverTime)
-    // p = entity position
-    // ------ t1 ------ tn --- t0 ----->> NOW
-    // ------ p1 ------ pn --- p0 ----->> NOW
-    // ------ 0% ------ x% --- 100% --->> NOW
-    const zeroPercent = serverTime - t1;
-    const hundredPercent = t0 - t1;
-    const pPercent = zeroPercent / hundredPercent;
+    let pPercent = 1.0;
 
-    if (type === TYPE_POSITION) {
-      const oX = olderFrame[2];
-      const oY = olderFrame[3];
-      const oZ = olderFrame[4];
+    if (!isFinalFrame) {
+      const t0 = newerFrame[0];
+      const t1 = olderFrame[0];
 
-      const nX = newerFrame[2];
-      const nY = newerFrame[3];
-      const nZ = newerFrame[4];
+      // THE TIMELINE
+      // t = time (serverTime)
+      // p = entity position
+      // ------ t1 ------ tn --- t0 ----->> NOW
+      // ------ p1 ------ pn --- p0 ----->> NOW
+      // ------ 0% ------ x% --- 100% --->> NOW
+      const zeroPercent = serverTime - t1;
+      const hundredPercent = t0 - t1;
+      pPercent = zeroPercent / hundredPercent;
 
-      const dx = oX - nX;
-      const dy = oY - nY;
-      const dz = oZ - nZ;
+      if (type === TYPE_POSITION) {
+        const oX = olderFrame[2];
+        const oY = olderFrame[3];
+        const oZ = olderFrame[4];
 
-      const distSq = dx * dx + dy * dy + dz * dz;
+        const nX = newerFrame[2];
+        const nY = newerFrame[3];
+        const nZ = newerFrame[4];
 
-      if (distSq >= this.maxLerpDistanceSq) {
-        target.x = nX;
-        target.y = nY;
-        target.z = nZ;
-      } else {
-        target.x = this.lerp(oX, nX, pPercent);
-        target.y = this.lerp(oY, nY, pPercent);
-        target.z = this.lerp(oZ, nZ, pPercent);
+        const dx = oX - nX;
+        const dy = oY - nY;
+        const dz = oZ - nZ;
+
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        if (distSq >= this.maxLerpDistanceSq) {
+          target.x = nX;
+          target.y = nY;
+          target.z = nZ;
+        } else {
+          target.x = this.lerp(oX, nX, pPercent);
+          target.y = this.lerp(oY, nY, pPercent);
+          target.z = this.lerp(oZ, nZ, pPercent);
+        }
+      } else if (type === TYPE_QUATERNION) {
+        target.x = olderFrame[5];
+        target.y = olderFrame[6];
+        target.z = olderFrame[7];
+        target.w = olderFrame[8];
+        tmpQuaternion.x = newerFrame[5];
+        tmpQuaternion.y = newerFrame[6];
+        tmpQuaternion.z = newerFrame[7];
+        tmpQuaternion.w = newerFrame[8];
+        target.slerp(tmpQuaternion, pPercent);
+      } else if (type === TYPE_SCALE) {
+        target.x = this.lerp(olderFrame[9], newerFrame[9], pPercent);
+        target.y = this.lerp(olderFrame[10], newerFrame[10], pPercent);
+        target.z = this.lerp(olderFrame[11], newerFrame[11], pPercent);
       }
-    } else if (type === TYPE_QUATERNION) {
-      target.x = olderFrame[5];
-      target.y = olderFrame[6];
-      target.z = olderFrame[7];
-      target.w = olderFrame[8];
-      tmpQuaternion.x = newerFrame[5];
-      tmpQuaternion.y = newerFrame[6];
-      tmpQuaternion.z = newerFrame[7];
-      tmpQuaternion.w = newerFrame[8];
-      target.slerp(tmpQuaternion, pPercent);
-    } else if (type === TYPE_SCALE) {
-      target.x = this.lerp(olderFrame[9], newerFrame[9], pPercent);
-      target.y = this.lerp(olderFrame[10], newerFrame[10], pPercent);
-      target.z = this.lerp(olderFrame[11], newerFrame[11], pPercent);
+    } else {
+      if (type === TYPE_POSITION) {
+        target.x = olderFrame[2];
+        target.y = olderFrame[3];
+        target.z = olderFrame[4];
+      } else if (type === TYPE_QUATERNION) {
+        target.x = olderFrame[5];
+        target.y = olderFrame[6];
+        target.z = olderFrame[7];
+        target.w = olderFrame[8];
+      } else if (type === TYPE_SCALE) {
+        target.x = olderFrame[9];
+        target.y = olderFrame[10];
+        target.z = olderFrame[11];
+      }
+
+      this.running &= ~type;
     }
 
-    if (olderFrame && olderFrame[0] !== 0 && serverTime - olderFrame[0] > 5000.0) {
-      // Optimization, stop doing work after older frame is more than 5 seconds old.
-      this.running = false;
-    }
 
     return true;
   }
