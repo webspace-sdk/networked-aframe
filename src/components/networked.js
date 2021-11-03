@@ -280,7 +280,7 @@ AFRAME.registerComponent('networked', {
         const quaternionUpdated = lerper.step(TYPE_QUATERNION, object3D.quaternion);
         const scaleUpdated = lerper.step(TYPE_SCALE, object3D.scale);
 
-        object3D.matrixNeedsUpdate = positionUpdated || quaternionUpdated || scaleUpdated;
+        object3D.matrixNeedsUpdate = positionUpdated || quaternionUpdated || scaleUpdated ? true : false;
       }
     }
   },
