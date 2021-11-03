@@ -493,8 +493,6 @@ AFRAME.registerComponent('networked', {
         el.setAttribute(componentName, data, value);
       }
 
-      el.object3D.matrixNeedsUpdate = true;
-
       return;
     }
 
