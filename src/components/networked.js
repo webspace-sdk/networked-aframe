@@ -267,6 +267,8 @@ AFRAME.registerComponent('networked', {
         const { lerper, object3D } = this.lerpers[i];
 
         let pos = tmpPosition;
+        pos.copy(object3D.position);
+
         const positionUpdated = lerper.step(TYPE_POSITION, pos);
 
         if (positionUpdated) {

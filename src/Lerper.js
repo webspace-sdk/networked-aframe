@@ -6,6 +6,7 @@ const TYPE_SCALE = 0x4;
 
 const tmpQuaternion = new THREE.Quaternion();
 const MAX_FINAL_FRAME_AWAIT_MS = 350;
+const EPSILON = 0.0001;
 
 // Performs lerp/slerp on frames
 class Lerper {
@@ -89,10 +90,10 @@ class Lerper {
   }
 
   step(type, target) {
-    if ((this.running & type) === 0) return;
+    if ((this.running & type) === 0) return false;
 
     const { frames } = this;
-    if (this.frameIndex === -1) return;
+    if (this.frameIndex === -1) return false;
 
     const serverTime = performance.now() - this.bufferTimeMs;
     let olderFrame;
@@ -146,9 +147,13 @@ class Lerper {
 
     const isFinalFrame = olderFrame && !newerFrame && performance.now() - olderFrame[0] > MAX_FINAL_FRAME_AWAIT_MS;
 
-    if (!isFinalFrame && (!olderFrame || !newerFrame)) return;
+    if (!isFinalFrame && (!olderFrame || !newerFrame)) return false;
 
     let pPercent = 1.0;
+
+    const px = target.x;
+    const py = target.y;
+    const pz = target.z;
 
     if (!isFinalFrame) {
       const t0 = newerFrame[0];
@@ -188,7 +193,10 @@ class Lerper {
           target.y = this.lerp(oY, nY, pPercent);
           target.z = this.lerp(oZ, nZ, pPercent);
         }
+
+        return Math.abs(px - target.x) > EPSILON || Math.abs(py - target.y) > EPSILON || Math.abs(pz - target.z) > EPSILON;
       } else if (type === TYPE_QUATERNION) {
+        const pw = target.w;
         target.x = olderFrame[5];
         target.y = olderFrame[6];
         target.z = olderFrame[7];
@@ -198,32 +206,35 @@ class Lerper {
         tmpQuaternion.z = newerFrame[7];
         tmpQuaternion.w = newerFrame[8];
         target.slerp(tmpQuaternion, pPercent);
+        return Math.abs(px - target.x) > EPSILON || Math.abs(py - target.y) > EPSILON || Math.abs(pz - target.z) > EPSILON || Math.abs(pw - target.w) > EPSILON;
       } else if (type === TYPE_SCALE) {
         target.x = this.lerp(olderFrame[9], newerFrame[9], pPercent);
         target.y = this.lerp(olderFrame[10], newerFrame[10], pPercent);
         target.z = this.lerp(olderFrame[11], newerFrame[11], pPercent);
+        return Math.abs(px - target.x) > EPSILON || Math.abs(py - target.y) > EPSILON || Math.abs(pz - target.z) > EPSILON;
       }
     } else {
+      this.running &= ~type;
+
       if (type === TYPE_POSITION) {
         target.x = olderFrame[2];
         target.y = olderFrame[3];
         target.z = olderFrame[4];
+        return Math.abs(px - target.x) > EPSILON || Math.abs(py - target.y) > EPSILON || Math.abs(pz - target.z) > EPSILON;
       } else if (type === TYPE_QUATERNION) {
+        const pw = target.w;
         target.x = olderFrame[5];
         target.y = olderFrame[6];
         target.z = olderFrame[7];
         target.w = olderFrame[8];
+        return Math.abs(px - target.x) > EPSILON || Math.abs(py - target.y) > EPSILON || Math.abs(pz - target.z) > EPSILON || Math.abs(pw - target.w) > EPSILON;
       } else if (type === TYPE_SCALE) {
         target.x = olderFrame[9];
         target.y = olderFrame[10];
         target.z = olderFrame[11];
+        return Math.abs(px - target.x) > EPSILON || Math.abs(py - target.y) > EPSILON || Math.abs(pz - target.z) > EPSILON;
       }
-
-      this.running &= ~type;
     }
-
-
-    return true;
   }
 }
 
