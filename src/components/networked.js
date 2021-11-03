@@ -486,11 +486,17 @@ AFRAME.registerComponent('networked', {
   },
 
   updateNetworkedComponent: function (el, componentName, data, value) {
-    if(!NAF.options.useLerp || !OBJECT3D_COMPONENTS.includes(componentName)) {
+    const affectsTransform = OBJECT3D_COMPONENTS.includes(componentName);
+
+    if(!NAF.options.useLerp || !affectsTransform) {
       if (value === undefined) {
         el.setAttribute(componentName, data);
       } else {
         el.setAttribute(componentName, data, value);
+      }
+
+      if (affectsTransform) {
+        el.object3D.matrixNeedsUpdate = true;
       }
 
       return;
