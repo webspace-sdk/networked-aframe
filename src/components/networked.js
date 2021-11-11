@@ -22,6 +22,15 @@ const resetBuilder = () => {
   builder.offset = 0;
   builder.finished = false;
 };
+const arrayBufferToBase64 = ( buffer ) => {
+    let binary = '';
+    const bytes = new Uint8Array( buffer );
+    let len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode( bytes[ i ] );
+    }
+    return window.btoa( binary );
+};
 
 // Don't dedup because we want to re-use builder
 builder.dedupStrings = false;
@@ -322,9 +331,26 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
+    resetBuilder();
+    builder.startVector();
+
+    builder.add(true) // is all
+    builder.add(!!isFirstSync) // is first sync
+    builder.add(this.data.networkId);
+    builder.add(this.data.owner);
+    builder.add(hashCode(this.data.owner));
+    builder.add(this.data.creator);
+    builder.add(this.lastOwnerTime);
+    builder.add(this.data.template);
+    builder.add(this.data.persistent);
+    builder.add(this.getParentId());
+
     var components = this.gatherComponentsData(true);
 
-    var syncData = this.createSyncAllData(components, isFirstSync);
+    builder.end();
+
+    const syncData = this.createSyncAllData(components, isFirstSync);
+    syncData.flexbufferBytes = arrayBufferToBase64(builder.finish());
 
     if (targetClientId) {
       NAF.connection.sendDataGuaranteed(targetClientId, 'u', syncData);
@@ -338,13 +364,25 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
+    resetBuilder();
+    builder.startVector();
+    builder.add(false) // is all
+    builder.add(this.data.networkId);
+    builder.add(hashCode(this.data.owner));
+    builder.add(this.lastOwnerTime);
+
     var components = this.gatherComponentsData(false);
+
+    builder.end();
 
     if (components === null) {
       return;
     }
 
-    return this.createSyncDirtyData(components);
+    const syncData = this.createSyncDirtyData(components);
+    syncData.flexbufferBytes = arrayBufferToBase64(builder.finish());
+
+    return syncData;
   },
 
   getCachedElement(componentSchemaIndex) {
@@ -370,9 +408,6 @@ AFRAME.registerComponent('networked', {
   },
 
   gatherComponentsData: function(fullSync) {
-    resetBuilder();
-    builder.startVector();
-
     var componentsData = null;
 
     for (var i = 0; i < this.componentSchemas.length; i++) {
@@ -438,8 +473,6 @@ AFRAME.registerComponent('networked', {
         }
       }
     }
-
-    builder.end();
 
     return componentsData;
   },
