@@ -3,6 +3,11 @@ const flexbuffers = require('flatbuffers/js/flexbuffers');
 var deepEqual = require('../DeepEquals');
 var DEG2RAD = THREE.Math.DEG2RAD;
 var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
+const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper');
+
+const tmpPosition = new THREE.Vector3();
+const tmpQuaternion = new THREE.Quaternion();
+const BASE_OWNER_TIME = 1636600000000;
 
 const hashCode = function(s) {
   var h = 0, l = s.length, i = 0;
@@ -12,9 +17,15 @@ const hashCode = function(s) {
   return h;
 };
 
+// Flexbuffer
 const builder = new flexbuffers.builder();
+
+// Don't dedup because we want to re-use builder
+builder.dedupStrings = false;
+builder.dedupKeys = false;
+builder.dedupKeyVectors = false;
+
 const builderUintView = new Uint8Array(builder.buffer);
-const tempKeyList = [];
 const resetBuilder = () => {
   builderUintView.fill(0);
   builder.stack.length = 0;
@@ -22,6 +33,10 @@ const resetBuilder = () => {
   builder.offset = 0;
   builder.finished = false;
 };
+
+// Map of aframe component name -> sorted attribute list
+const aframeSchemaSortedKeys = new Map();
+
 const arrayBufferToBase64 = ( buffer ) => {
     let binary = '';
     const bytes = new Uint8Array( buffer );
@@ -31,16 +46,6 @@ const arrayBufferToBase64 = ( buffer ) => {
     }
     return window.btoa( binary );
 };
-
-// Don't dedup because we want to re-use builder
-builder.dedupStrings = false;
-builder.dedupKeys = false;
-builder.dedupKeyVectors = false;
-
-const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper');
-
-const tmpPosition = new THREE.Vector3();
-const tmpQuaternion = new THREE.Quaternion();
 
 function defaultRequiresUpdate() {
   let cachedData = null;
@@ -87,26 +92,31 @@ AFRAME.registerSystem("networked", {
       if (!NAF.connection.adapter) return;
       if (this.el.clock.elapsedTime < this.nextSyncTime) return;
 
-      // "d" is an array of entity datas per entity in this.components.
-      const data = { d: [] };
+      resetBuilder();
+      builder.startVector();
+      builder.add(true); // is update
+      builder.add(false); // is full
+
+      let send = false;
 
       for (let i = 0, l = this.components.length; i < l; i++) {
         const c = this.components[i];
         if (!c.isMine()) continue;
+        if (!c.canSync()) continue;
         if (!c.el.parentElement) {
           NAF.log.error("entity registered with system despite being removed");
           //TODO: Find out why tick is still being called
           return;
         }
 
-        const syncData = this.components[i].syncDirty();
-        if (!syncData) continue;
-
-        data.d.push(syncData);
+        if (!c.pushComponentsDataToBuilder(false)) continue;
+        send = true;
       }
 
-      if (data.d.length > 0) {
-        NAF.connection.broadcastData('um', data);
+      builder.end();
+
+      if (send) {
+        NAF.connection.broadcastData(arrayBufferToBase64(builder.finish().buffer));
       }
 
       this.updateNextSyncTime();
@@ -152,8 +162,6 @@ AFRAME.registerComponent('networked', {
 
     this.onConnected = this.onConnected.bind(this);
 
-    this.syncAllData = {};
-    this.syncDirtyData = {};
     this.componentSchemas =  NAF.schemas.getComponents(this.data.template);
     this.cachedElements = new Array(this.componentSchemas.length);
     this.networkUpdatePredicates = this.componentSchemas.map(x => (x.requiresNetworkUpdate && x.requiresNetworkUpdate()) || defaultRequiresUpdate());
@@ -333,56 +341,24 @@ AFRAME.registerComponent('networked', {
 
     resetBuilder();
     builder.startVector();
+    builder.add(true); // is update
+    builder.add(true); // is full
 
-    builder.add(true) // is all
-    builder.add(!!isFirstSync) // is first sync
-    builder.add(this.data.networkId);
+    // Full preamble
     builder.add(this.data.owner);
-    builder.add(hashCode(this.data.owner));
     builder.add(this.data.creator);
-    builder.add(this.lastOwnerTime);
-    builder.add(this.data.template);
-    builder.add(this.data.persistent);
     builder.add(this.getParentId());
 
-    var components = this.gatherComponentsData(true);
+    // Components
+    this.pushComponentsDataToBuilder(true);
 
     builder.end();
-
-    const syncData = this.createSyncAllData(components, isFirstSync);
-    syncData.flexbufferBytes = arrayBufferToBase64(builder.finish());
 
     if (targetClientId) {
-      NAF.connection.sendDataGuaranteed(targetClientId, 'u', syncData);
+      NAF.connection.sendDataGuaranteed(targetClientId, arrayBufferToBase64(builder.finish()));
     } else {
-      NAF.connection.broadcastDataGuaranteed('u', syncData);
+      NAF.connection.broadcastDataGuaranteed(arrayBufferToBase64(builder.finish()));
     }
-  },
-
-  syncDirty: function() {
-    if (!this.canSync()) {
-      return;
-    }
-
-    resetBuilder();
-    builder.startVector();
-    builder.add(false) // is all
-    builder.add(this.data.networkId);
-    builder.add(hashCode(this.data.owner));
-    builder.add(this.lastOwnerTime);
-
-    var components = this.gatherComponentsData(false);
-
-    builder.end();
-
-    if (components === null) {
-      return;
-    }
-
-    const syncData = this.createSyncDirtyData(components);
-    syncData.flexbufferBytes = arrayBufferToBase64(builder.finish());
-
-    return syncData;
   },
 
   getCachedElement(componentSchemaIndex) {
@@ -407,38 +383,34 @@ AFRAME.registerComponent('networked', {
     }
   },
 
-  gatherComponentsData: function(fullSync) {
-    var componentsData = null;
+  pushComponentsDataToBuilder: function(fullSync) {
+    let hadComponents = false;
 
     for (var i = 0; i < this.componentSchemas.length; i++) {
-      var componentSchema = this.componentSchemas[i];
-      var componentElement = this.getCachedElement(i);
+      const componentSchema = this.componentSchemas[i];
+      const componentElement = this.getCachedElement(i);
 
-      if (!componentElement) {
-        if (fullSync) {
-          componentsData = componentsData || {};
-          componentsData[i] = null;
-        }
-        continue;
-      }
+      if (!componentElement) continue;
 
-      var componentName = componentSchema.component ? componentSchema.component : componentSchema;
-      var componentData = componentElement.getAttribute(componentName);
+      const componentName = componentSchema.component ? componentSchema.component : componentSchema;
+      const componentData = componentElement.getAttribute(componentName);
 
-      if (componentData === null) {
-        if (fullSync) {
-          componentsData = componentsData || {};
-          componentsData[i] = null;
-        }
-        continue;
-      }
+      if (componentData === null) continue;
 
-      var syncedComponentData = componentSchema.property ? componentData[componentSchema.property] : componentData;
+      const syncedComponentData = componentSchema.property ? componentData[componentSchema.property] : componentData;
 
       // Use networkUpdatePredicate to check if the component needs to be updated.
       // Call networkUpdatePredicate first so that it can update any cached values in the event of a fullSync.
       if (this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
-        componentsData = componentsData || {};
+        // Components preamble
+        if (!hadComponents) {
+          builder.startVector();
+          builder.add(this.data.networkId);
+          builder.add(hashCode(this.data.owner));
+          builder.add(this.lastOwnerTime - BASE_OWNER_TIME); // 32 bits
+        }
+
+        hadComponents = true;
 
         let dataToSync = syncedComponentData;
 
@@ -446,61 +418,71 @@ AFRAME.registerComponent('networked', {
           dataToSync = this.positionNormalizer(dataToSync, this.el);
         }
 
-        componentsData[i] = dataToSync;
-
         builder.addInt(i);
 
         if (OBJECT3D_COMPONENTS.includes(componentName)) {
-          builder.addFloat(dataToSync.x);
-          builder.addFloat(dataToSync.y);
-          builder.addFloat(dataToSync.z);
+          builder.addFloat(Math.fround(dataToSync.x));
+          builder.addFloat(Math.fround(dataToSync.y));
+          builder.addFloat(Math.fround(dataToSync.z));
         } else {
           if (typeof dataToSync === 'object') {
-            tempKeyList.length = 0;
-
-            for (const k of Object.keys(dataToSync)) {
-              tempKeyList.push(k);
+            if (!aframeSchemaSortedKeys.has(componentName)) {
+              aframeSchemaSortedKeys.set(componentName, [...Object.keys(componentElement.components[componentName].schema)].sort());
             }
 
-            tempKeyList.sort();
+            const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-            for (let i = 0; i < tempKeyList.length; i++) {
-              builder.add(dataToSync[tempKeyList[i]]);
+            for (let j = 0; j <= aframeSchemaKeys.length; j++) {
+              const key = aframeSchemaKeys[j];
+
+              if (dataToSync[key] !== undefined) {
+                builder.addInt(j);
+
+                const value = dataToSync[key];
+
+                if (typeof value === "number") {
+                  if (Number.isInteger(value)) {
+                    if (value > 2147483647 || value < -2147483648) {
+                      NAF.log.error('64 bit integers not supported', value, componentSchema);
+                    } else {
+                      builder.add(value);
+                    }
+                  } else {
+                    builder.add(Math.fround(value));
+                  }
+                } else {
+                  builder.add(value);
+                }
+              }
             }
           } else {
-            builder.add(dataToSync);
+            const value = dataToSync;
+
+            if (typeof value === "object") {
+              NAF.log.error('Schema should not set property for object or array values', value, componentSchema);
+            } else if (typeof value === "number") {
+              if (Number.isInteger(value)) {
+                if (value > 2147483647 || value < -2147483648) {
+                  NAF.log.error('64 bit integers not supported', value, componentSchema);
+                } else {
+                  builder.add(value);
+                }
+              } else {
+                builder.add(Math.fround(value));
+              }
+            } else {
+              builder.add(value);
+            }
           }
         }
       }
     }
 
-    return componentsData;
-  },
+    if (hadComponents) {
+      builder.end();
+    }
 
-  createSyncAllData: function(components, isFirstSync) {
-    var { syncAllData, data } = this;
-    syncAllData.isAll = true;
-    syncAllData.networkId = data.networkId;
-    syncAllData.owner = data.owner;
-    syncAllData.ownerHash = hashCode(data.owner);
-    syncAllData.creator = data.creator;
-    syncAllData.lastOwnerTime = this.lastOwnerTime;
-    syncAllData.template = data.template;
-    syncAllData.persistent = data.persistent;
-    syncAllData.parent = this.getParentId();
-    syncAllData.components = components;
-    syncAllData.isFirstSync = !!isFirstSync;
-    return syncAllData;
-  },
-
-  createSyncDirtyData: function(components) {
-    var { syncDirtyData, data } = this;
-    syncDirtyData.isAll = false;
-    syncDirtyData.networkId = data.networkId;
-    syncDirtyData.lastOwnerTime = this.lastOwnerTime;
-    syncDirtyData.ownerHash = hashCode(data.owner);
-    syncDirtyData.components = components;
-    return syncDirtyData;
+    return hadComponents;
   },
 
   canSync: function() {
@@ -654,9 +636,14 @@ AFRAME.registerComponent('networked', {
 
   remove: function () {
     if (this.isMine() && NAF.connection.isConnected()) {
-      var syncData = { networkId: this.data.networkId };
       if (NAF.entities.hasEntity(this.data.networkId)) {
-        NAF.connection.broadcastDataGuaranteed('r', syncData);
+        resetBuilder();
+        builder.startVector();
+        builder.add(false); // is update (no, is remove)
+        builder.add(this.data.networkId);
+        builder.end();
+
+        NAF.connection.broadcastDataGuaranteed(arrayBufferToBase64(builder.finish()));
       } else {
         NAF.log.error("Removing networked entity that is not in entities array.");
       }
