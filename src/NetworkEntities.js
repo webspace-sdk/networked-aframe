@@ -55,7 +55,7 @@ class NetworkEntities {
 
     if (this.hasEntity(networkId)) {
       this.entities[networkId].components.networked.networkUpdate(entityData);
-    } else if (entityData.isFirstSync && NAF.connection.activeDataChannels[entityData.owner] !== false) {
+    } else if (entityData.isAll && entityData.isFirstSync && NAF.connection.activeDataChannels[entityData.owner] !== false) {
       if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
         NAF.log.write('Ignoring first sync from disallowed source', source);
       } else {

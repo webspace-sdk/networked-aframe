@@ -1,7 +1,32 @@
 /* global AFRAME, NAF, THREE */
+const flexbuffers = require('flatbuffers/js/flexbuffers');
 var deepEqual = require('../DeepEquals');
 var DEG2RAD = THREE.Math.DEG2RAD;
 var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
+
+const hashCode = function(s) {
+  var h = 0, l = s.length, i = 0;
+  if ( l > 0 )
+    while (i < l)
+      h = (h << 5) - h + s.charCodeAt(i++) | 0;
+  return h;
+};
+
+const builder = new flexbuffers.builder();
+const builderUintView = new Uint8Array(builder.buffer);
+const tempKeyList = [];
+const resetBuilder = () => {
+  builderUintView.fill(0);
+  builder.stack.length = 0;
+  builder.stackPointers.length = 0;
+  builder.offset = 0;
+  builder.finished = false;
+};
+
+// Don't dedup because we want to re-use builder
+builder.dedupStrings = false;
+builder.dedupKeys = false;
+builder.dedupKeyVectors = false;
 
 const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper');
 
@@ -118,7 +143,8 @@ AFRAME.registerComponent('networked', {
 
     this.onConnected = this.onConnected.bind(this);
 
-    this.syncData = {};
+    this.syncAllData = {};
+    this.syncDirtyData = {};
     this.componentSchemas =  NAF.schemas.getComponents(this.data.template);
     this.cachedElements = new Array(this.componentSchemas.length);
     this.networkUpdatePredicates = this.componentSchemas.map(x => (x.requiresNetworkUpdate && x.requiresNetworkUpdate()) || defaultRequiresUpdate());
@@ -298,7 +324,7 @@ AFRAME.registerComponent('networked', {
 
     var components = this.gatherComponentsData(true);
 
-    var syncData = this.createSyncData(components, isFirstSync);
+    var syncData = this.createSyncAllData(components, isFirstSync);
 
     if (targetClientId) {
       NAF.connection.sendDataGuaranteed(targetClientId, 'u', syncData);
@@ -318,7 +344,7 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
-    return this.createSyncData(components);
+    return this.createSyncDirtyData(components);
   },
 
   getCachedElement(componentSchemaIndex) {
@@ -344,6 +370,9 @@ AFRAME.registerComponent('networked', {
   },
 
   gatherComponentsData: function(fullSync) {
+    resetBuilder();
+    builder.startVector();
+
     var componentsData = null;
 
     for (var i = 0; i < this.componentSchemas.length; i++) {
@@ -383,24 +412,62 @@ AFRAME.registerComponent('networked', {
         }
 
         componentsData[i] = dataToSync;
+
+        builder.addInt(i);
+
+        if (OBJECT3D_COMPONENTS.includes(componentName)) {
+          builder.addFloat(dataToSync.x);
+          builder.addFloat(dataToSync.y);
+          builder.addFloat(dataToSync.z);
+        } else {
+          if (typeof dataToSync === 'object') {
+            tempKeyList.length = 0;
+
+            for (const k of Object.keys(dataToSync)) {
+              tempKeyList.push(k);
+            }
+
+            tempKeyList.sort();
+
+            for (let i = 0; i < tempKeyList.length; i++) {
+              builder.add(dataToSync[tempKeyList[i]]);
+            }
+          } else {
+            builder.add(dataToSync);
+          }
+        }
       }
     }
+
+    builder.end();
 
     return componentsData;
   },
 
-  createSyncData: function(components, isFirstSync) {
-    var { syncData, data } = this;
-    syncData.networkId = data.networkId;
-    syncData.owner = data.owner;
-    syncData.creator = data.creator;
-    syncData.lastOwnerTime = this.lastOwnerTime;
-    syncData.template = data.template;
-    syncData.persistent = data.persistent;
-    syncData.parent = this.getParentId();
-    syncData.components = components;
-    syncData.isFirstSync = !!isFirstSync;
-    return syncData;
+  createSyncAllData: function(components, isFirstSync) {
+    var { syncAllData, data } = this;
+    syncAllData.isAll = true;
+    syncAllData.networkId = data.networkId;
+    syncAllData.owner = data.owner;
+    syncAllData.ownerHash = hashCode(data.owner);
+    syncAllData.creator = data.creator;
+    syncAllData.lastOwnerTime = this.lastOwnerTime;
+    syncAllData.template = data.template;
+    syncAllData.persistent = data.persistent;
+    syncAllData.parent = this.getParentId();
+    syncAllData.components = components;
+    syncAllData.isFirstSync = !!isFirstSync;
+    return syncAllData;
+  },
+
+  createSyncDirtyData: function(components) {
+    var { syncDirtyData, data } = this;
+    syncDirtyData.isAll = false;
+    syncDirtyData.networkId = data.networkId;
+    syncDirtyData.lastOwnerTime = this.lastOwnerTime;
+    syncDirtyData.ownerHash = hashCode(data.owner);
+    syncDirtyData.components = components;
+    return syncDirtyData;
   },
 
   canSync: function() {
@@ -438,11 +505,11 @@ AFRAME.registerComponent('networked', {
   networkUpdate: function(entityData) {
     // Avoid updating components if the entity data received did not come from the current owner.
     if (entityData.lastOwnerTime < this.lastOwnerTime ||
-          (this.lastOwnerTime === entityData.lastOwnerTime && this.data.owner > entityData.owner)) {
+          (this.lastOwnerTime === entityData.lastOwnerTime && this.data.ownerHash > entityData.ownerHash)) {
       return;
     }
 
-    if (this.data.owner !== entityData.owner) {
+    if (entityData.isAll && this.data.owner !== entityData.owner) {
       var wasMine = this.isMine();
       this.lastOwnerTime = entityData.lastOwnerTime;
 
@@ -459,7 +526,7 @@ AFRAME.registerComponent('networked', {
       this.onOwnershipChangedEvent.newOwner = newOwner;
       this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
     }
-    if (this.data.persistent !== entityData.persistent) {
+    if (entityData.isAll && this.data.persistent !== entityData.persistent) {
       this.el.setAttribute('networked', { persistent: entityData.persistent });
     }
     this.updateNetworkedComponents(entityData.components);
