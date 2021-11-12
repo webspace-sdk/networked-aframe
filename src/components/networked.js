@@ -1,21 +1,14 @@
 /* global AFRAME, NAF, THREE */
 const flexbuffers = require('flatbuffers/js/flexbuffers');
-var deepEqual = require('../DeepEquals');
-var DEG2RAD = THREE.Math.DEG2RAD;
-var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
+const uuid = require("uuid")
+const deepEqual = require('../DeepEquals');
+const DEG2RAD = THREE.Math.DEG2RAD;
+const OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
 const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper');
 
 const tmpPosition = new THREE.Vector3();
 const tmpQuaternion = new THREE.Quaternion();
 const BASE_OWNER_TIME = 1636600000000;
-
-const hashCode = function(s) {
-  var h = 0, l = s.length, i = 0;
-  if ( l > 0 )
-    while (i < l)
-      h = (h << 5) - h + s.charCodeAt(i++) | 0;
-  return h;
-};
 
 // Flexbuffer
 const builder = new flexbuffers.builder();
@@ -106,7 +99,7 @@ AFRAME.registerSystem("networked", {
         if (!c.el.parentElement) {
           NAF.log.error("entity registered with system despite being removed");
           //TODO: Find out why tick is still being called
-          return;
+          continue;
         }
 
         if (!c.pushComponentsDataToBuilder(false)) continue;
@@ -116,7 +109,8 @@ AFRAME.registerSystem("networked", {
       builder.end();
 
       if (send) {
-        NAF.connection.broadcastData(arrayBufferToBase64(builder.finish().buffer));
+        const buf = builder.finish().buffer;
+        NAF.connection.broadcastData(arrayBufferToBase64(buf));
       }
 
       this.updateNextSyncTime();
@@ -263,16 +257,16 @@ AFRAME.registerComponent('networked', {
 
   applyPersistentFirstSync: function() {
     const { networkId } = this.data;
-    const persistentFirstSync = NAF.entities.getPersistentFirstSync(networkId);
-    if (persistentFirstSync) {
-      this.networkUpdate(persistentFirstSync);
+    const persistentFirstSyncEntityData = NAF.entities.getPersistentFirstSync(networkId);
+    if (persistentFirstSyncEntityData) {
+      // Can presume offset zero for first full sync
+      this.networkUpdate(persistentFirstSyncEntityData, true);
       NAF.entities.forgetPersistentFirstSync(networkId);
     }
   },
 
   firstUpdate: function() {
-    var entityData = this.el.firstUpdateData;
-    this.networkUpdate(entityData);
+    this.networkUpdate(this.el.firstUpdateData, true);
   },
 
   onConnected: function() {
@@ -305,7 +299,7 @@ AFRAME.registerComponent('networked', {
   },
 
   tick: function(time, dt) {
-    if (!this.isMine() && NAF.options.useLerp) {
+    if (!this.isMine()) {
       for (var i = 0; i < this.lerpers.length; i++) {
         const { lerper, object3D } = this.lerpers[i];
 
@@ -343,11 +337,6 @@ AFRAME.registerComponent('networked', {
     builder.startVector();
     builder.add(true); // is update
     builder.add(true); // is full
-
-    // Full preamble
-    builder.add(this.data.owner);
-    builder.add(this.data.creator);
-    builder.add(this.getParentId());
 
     // Components
     this.pushComponentsDataToBuilder(true);
@@ -406,8 +395,16 @@ AFRAME.registerComponent('networked', {
         if (!hadComponents) {
           builder.startVector();
           builder.add(this.data.networkId);
-          builder.add(hashCode(this.data.owner));
+          builder.add([...uuid.parse(this.data.owner)]);
           builder.add(this.lastOwnerTime - BASE_OWNER_TIME); // 32 bits
+
+          if (fullSync) {
+            // Full preamble
+            builder.add([...uuid.parse(this.data.creator)]);
+            builder.add(this.data.template);
+            builder.add(this.data.persistent);
+            builder.add(this.getParentId());
+          }
         }
 
         hadComponents = true;
@@ -418,6 +415,7 @@ AFRAME.registerComponent('networked', {
           dataToSync = this.positionNormalizer(dataToSync, this.el);
         }
 
+        builder.startVector();
         builder.addInt(i);
 
         if (OBJECT3D_COMPONENTS.includes(componentName)) {
@@ -427,7 +425,7 @@ AFRAME.registerComponent('networked', {
         } else {
           if (typeof dataToSync === 'object') {
             if (!aframeSchemaSortedKeys.has(componentName)) {
-              aframeSchemaSortedKeys.set(componentName, [...Object.keys(componentElement.components[componentName].schema)].sort());
+              aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
             }
 
             const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
@@ -475,6 +473,8 @@ AFRAME.registerComponent('networked', {
             }
           }
         }
+
+        builder.end();
       }
     }
 
@@ -517,21 +517,24 @@ AFRAME.registerComponent('networked', {
 
   /* Receiving updates */
 
-  networkUpdate: function(entityData) {
+  networkUpdate: function(entityData, isFullSync) {
+    const entityDataOwner = uuid.stringify(entityData[1]);
+    const entityDataLastOwnerTime = entityData[2] + BASE_OWNER_TIME;
+
     // Avoid updating components if the entity data received did not come from the current owner.
-    if (entityData.lastOwnerTime < this.lastOwnerTime ||
-          (this.lastOwnerTime === entityData.lastOwnerTime && this.data.ownerHash > entityData.ownerHash)) {
+    if (entityDataLastOwnerTime < this.lastOwnerTime ||
+          (this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner)) {
       return;
     }
 
-    if (entityData.isAll && this.data.owner !== entityData.owner) {
+    if (isFullSync && this.data.owner !== entityDataOwner) {
       var wasMine = this.isMine();
-      this.lastOwnerTime = entityData.lastOwnerTime;
+      this.lastOwnerTime = entityDataLastOwnerTime;
 
       const oldOwner = this.data.owner;
-      const newOwner = entityData.owner;
+      const newOwner = entityDataOwner;
 
-      this.el.setAttribute('networked', { owner: entityData.owner });
+      this.el.setAttribute('networked', { owner: entityDataOwner });
 
       if (wasMine) {
         this.onOwnershipLostEvent.newOwner = newOwner;
@@ -541,85 +544,87 @@ AFRAME.registerComponent('networked', {
       this.onOwnershipChangedEvent.newOwner = newOwner;
       this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
     }
-    if (entityData.isAll && this.data.persistent !== entityData.persistent) {
-      this.el.setAttribute('networked', { persistent: entityData.persistent });
+    if (isFullSync && this.data.persistent !== entityData[5]) {
+      this.el.setAttribute('networked', { persistent: entityData[5] });
     }
-    this.updateNetworkedComponents(entityData.components);
+    this.updateNetworkedComponents(entityData, isFullSync);
   },
 
-  updateNetworkedComponents: function(components) {
+  updateNetworkedComponents: function(entityData, isFullSync) {
     this.startLerpingFrame();
 
-    for (var componentIndex = 0, l = this.componentSchemas.length; componentIndex < l; componentIndex++) {
-      var componentData = components[componentIndex];
-      var componentSchema = this.componentSchemas[componentIndex];
-      var componentElement = this.getCachedElement(componentIndex);
+    for (let iData = isFullSync ? 7 : 3; iData < entityData.length; iData++) {
+      const componentData = entityData[iData];
+      const componentIndex = componentData[0];
+      const componentSchema = this.componentSchemas[componentIndex];
+      const el = this.getCachedElement(componentIndex);
 
-      if (componentElement === null || componentData === null || componentData === undefined ) {
+      if (el === null || componentData === null || componentData === undefined) {
         continue;
       }
 
-      if (componentSchema.component) {
+      const componentName = componentSchema.component ? componentSchema.component : componentSchema;
+
+      if (!OBJECT3D_COMPONENTS.includes(componentName)) {
         if (componentSchema.property) {
-          this.updateNetworkedComponent(componentElement, componentSchema.component, componentSchema.property, componentData);
+          el.setAttribute(componentName, componentSchema.property, componentData[1]);
         } else {
-          this.updateNetworkedComponent(componentElement, componentSchema.component, componentData);
+          if (!aframeSchemaSortedKeys.has(componentName)) {
+            aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
+          }
+
+          if (componentData.length > 1) {
+            const attributeValue = {};
+            const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+
+            for (let j = 1; j < componentData.length; j += 2) {
+              attributeValue[aframeSchemaKeys[componentData[j]]] = componentData[j + 1];
+            }
+
+            el.setAttribute(componentName, attributeValue);
+          }
         }
       } else {
-        this.updateNetworkedComponent(componentElement, componentSchema, componentData);
+        const x = componentData[1];
+        const y = componentData[2];
+        const z = componentData[3];
+
+        let lerper;
+
+        for (let i = 0, l = this.lerpers.length; i < l; i++) {
+          const info = this.lerpers[i];
+
+          if (info.object3D === el.object3D) {
+            lerper = info.lerper;
+            break;
+          }
+        }
+
+        if (!lerper) {
+          lerper = new Lerper(NAF.options.updateRate, NAF.options.maxLerpDistance);
+          this.lerpers.push({ lerper, object3D: el.object3D });
+          lerper.startFrame();
+        }
+
+        switch(componentName) {
+          case 'position':
+            lerper.setPosition(x, y, z);
+            break;
+          case 'rotation':
+            this.conversionEuler.set(DEG2RAD * x, DEG2RAD * y, DEG2RAD * z);
+            tmpQuaternion.setFromEuler(this.conversionEuler)
+            lerper.setQuaternion(tmpQuaternion.x, tmpQuaternion.y, tmpQuaternion.z, tmpQuaternion.w);
+            break;
+          case 'scale':
+            lerper.setScale(x, y, z);
+            break;
+          default:
+        NAF.log.error('Could not set value in interpolation buffer.', el, componentName, x, y, z);
+            break;
+        }
+
       }
     }
-  },
-
-  updateNetworkedComponent: function (el, componentName, data, value) {
-    const affectsTransform = OBJECT3D_COMPONENTS.includes(componentName);
-
-    if(!NAF.options.useLerp || !affectsTransform) {
-      if (value === undefined) {
-        el.setAttribute(componentName, data);
-      } else {
-        el.setAttribute(componentName, data, value);
-      }
-
-      if (affectsTransform) {
-        el.object3D.matrixNeedsUpdate = true;
-      }
-
-      return;
-    }
-
-    let lerper;
-
-    for (let i = 0, l = this.lerpers.length; i < l; i++) {
-      const info = this.lerpers[i];
-
-      if (info.object3D === el.object3D) {
-        lerper = info.lerper;
-        break;
-      }
-    }
-
-    if (!lerper) {
-      lerper = new Lerper(NAF.options.updateRate, NAF.options.maxLerpDistance);
-      this.lerpers.push({ lerper, object3D: el.object3D });
-      lerper.startFrame();
-    }
-
-    switch(componentName) {
-      case 'position':
-        lerper.setPosition(data.x, data.y, data.z);
-        return;
-      case 'rotation':
-        this.conversionEuler.set(DEG2RAD * data.x, DEG2RAD * data.y, DEG2RAD * data.z);
-        tmpQuaternion.setFromEuler(this.conversionEuler)
-        lerper.setQuaternion(tmpQuaternion.x, tmpQuaternion.y, tmpQuaternion.z, tmpQuaternion.w);
-        return;
-      case 'scale':
-        lerper.setScale(data.x, data.y, data.z);
-        return;
-    }
-
-    NAF.log.error('Could not set value in interpolation buffer.', el, componentName, data);
   },
 
   startLerpingFrame: function() {

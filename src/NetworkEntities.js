@@ -1,5 +1,6 @@
 /* global NAF */
 var ChildEntityCache = require('./ChildEntityCache');
+const uuid = require("uuid")
 
 class NetworkEntities {
 
@@ -19,8 +20,10 @@ class NetworkEntities {
   createRemoteEntity(entityData) {
     NAF.log.write('Creating remote entity', entityData);
 
-    var networkId = entityData.networkId;
-    var el = NAF.schemas.getCachedTemplate(entityData.template);
+    const networkId = entityData[0];
+    const template = entityData[4];
+
+    const el = NAF.schemas.getCachedTemplate(template);
 
     this.addNetworkComponent(el, entityData);
 
@@ -30,49 +33,48 @@ class NetworkEntities {
   }
 
   addNetworkComponent(entity, entityData) {
-    var networkData = {
-      template: entityData.template,
-      creator: entityData.creator,
-      owner: entityData.owner,
-      networkId: entityData.networkId,
-      persistent: entityData.persistent
-    };
+    const networkId = entityData[0];
+    const owner = uuid.stringify(entityData[1]);
+    const creator = uuid.stringify(entityData[3]);
+    const template = entityData[4];
+    const persistent = entityData[5];
 
-    entity.setAttribute('networked', networkData);
+    entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
+
     entity.firstUpdateData = entityData;
   }
 
-  updateEntityMulti(client, dataType, entityDatas, source) {
+  updateEntity(client, dataType, msg, source) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-    for (let i = 0, l = entityDatas.d.length; i < l; i++) {
-      this.updateEntity(client, 'u', entityDatas.d[i], source);
-    }
-  }
 
-  updateEntity(client, dataType, entityData, source) {
-    if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-    var networkId = entityData.networkId;
+    const isFullSync = msg[1];
+    for (let i = 2; i < msg.length; i++) {
+      const entityData = msg[i];
 
-    if (this.hasEntity(networkId)) {
-      this.entities[networkId].components.networked.networkUpdate(entityData);
-    } else if (entityData.isAll && entityData.isFirstSync && NAF.connection.activeDataChannels[entityData.owner] !== false) {
-      if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
-        NAF.log.write('Ignoring first sync from disallowed source', source);
-      } else {
-        if (entityData.persistent) {
-          // If we receive a firstSync for a persistent entity that we don't have yet,
-          // we assume the scene will create it at some point, so stash the update for later use.
-          this._persistentFirstSyncs[networkId] = entityData;
+      const networkId = entityData[0];
+      const owner = uuid.stringify(entityData[1]);
+
+      if (this.hasEntity(networkId)) {
+        this.entities[networkId].components.networked.networkUpdate(entityData, isFullSync);
+      } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
+        if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
+          NAF.log.write('Ignoring first sync from disallowed source', source);
         } else {
-          this.receiveFirstUpdateFromEntity(entityData);
+          if (entityData[5] /* persistent */) {
+            // If we receive a firstSync for a persistent entity that we don't have yet,
+            // we assume the scene will create it at some point, so stash the update for later use.
+            this._persistentFirstSyncs[networkId] = entityData;
+          } else {
+            this.receiveFirstUpdateFromEntity(entityData);
+          }
         }
       }
     }
   }
 
   receiveFirstUpdateFromEntity(entityData) {
-    var parent = entityData.parent;
-    var networkId = entityData.networkId;
+    var networkId = entityData[0];
+    var parent = entityData[6];
 
     var parentNotCreatedYet = parent && !this.hasEntity(parent);
     if (parentNotCreatedYet) {
@@ -130,10 +132,10 @@ class NetworkEntities {
     }
   }
 
-  removeRemoteEntity(toClient, dataType, data, source) {
+  removeRemoteEntity(client, dataType, msg, source) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-    var id = data.networkId;
-    return this.removeEntity(id);
+    const networkId = msg[1];
+    return this.removeEntity(networkId);
   }
 
   removeEntitiesOfClient(clientId) {

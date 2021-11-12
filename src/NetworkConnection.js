@@ -1,5 +1,17 @@
 /* global NAF */
-var ReservedDataType = { Update: 'u', UpdateMulti: 'um', Remove: 'r' };
+
+const flexbuffers = require('flatbuffers/js/flexbuffers');
+var ReservedDataType = { Update: 'u', Remove: 'r' };
+
+const base64ToArrayBuffer = (base64) => {
+    var binary_string = window.atob(base64);
+    var len = binary_string.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+};
 
 class NetworkConnection {
 
@@ -20,9 +32,6 @@ class NetworkConnection {
 
     this.dataChannelSubs[ReservedDataType.Update]
         = this.entities.updateEntity.bind(this.entities);
-
-    this.dataChannelSubs[ReservedDataType.UpdateMulti]
-        = this.entities.updateEntityMulti.bind(this.entities);
 
     this.dataChannelSubs[ReservedDataType.Remove]
         = this.entities.removeRemoteEntity.bind(this.entities);
@@ -194,9 +203,15 @@ class NetworkConnection {
         || dataType == ReservedDataType.Remove;
   }
 
-  receivedData(fromClientId, dataType, data, source) {
+  receivedData(fromClientId, data, source) {
+    const bytes = base64ToArrayBuffer(data);
+    const msg = flexbuffers.toObject(bytes);
+
+    // First bool is the data type
+    const dataType = msg[0] ? "u" : "r";
+
     if (this.dataChannelSubs.hasOwnProperty(dataType)) {
-      this.dataChannelSubs[dataType](fromClientId, dataType, data, source);
+      this.dataChannelSubs[dataType](fromClientId, dataType, msg, source);
     } else {
       NAF.log.write('NetworkConnection@receivedData: ' + dataType + ' has not been subscribed to yet. Call subscribeToDataChannel()');
     }
