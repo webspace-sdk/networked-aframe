@@ -1,5 +1,6 @@
 /* global AFRAME, NAF, THREE */
 const flexbuffers = require('flatbuffers/js/flexbuffers');
+const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet, refGetBool, refGetUuidBytes } = require('../FlexBufferUtils');
 const uuid = require("uuid")
 const deepEqual = require('../DeepEquals');
 const DEG2RAD = THREE.Math.DEG2RAD;
@@ -9,6 +10,9 @@ const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerpe
 const tmpPosition = new THREE.Vector3();
 const tmpQuaternion = new THREE.Quaternion();
 const BASE_OWNER_TIME = 1636600000000;
+
+const uuidByteBuf = [];
+const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
 
 // Flexbuffer
 const builder = new flexbuffers.builder();
@@ -239,7 +243,7 @@ AFRAME.registerComponent('networked', {
   },
 
   wasCreatedByNetwork: function() {
-    return !!this.el.firstUpdateData;
+    return !!this.el.firstUpdateDataRef;
   },
 
   initNetworkParent: function() {
@@ -257,16 +261,16 @@ AFRAME.registerComponent('networked', {
 
   applyPersistentFirstSync: function() {
     const { networkId } = this.data;
-    const persistentFirstSyncEntityData = NAF.entities.getPersistentFirstSync(networkId);
-    if (persistentFirstSyncEntityData) {
+    const persistentFirstSyncEntityDataRef = NAF.entities.getPersistentFirstSync(networkId);
+    if (persistentFirstSyncEntityDataRef) {
       // Can presume offset zero for first full sync
-      this.networkUpdate(persistentFirstSyncEntityData, true);
+      this.networkUpdate(persistentFirstSyncEntityDataRef, true);
       NAF.entities.forgetPersistentFirstSync(networkId);
     }
   },
 
   firstUpdate: function() {
-    this.networkUpdate(this.el.firstUpdateData, true);
+    this.networkUpdate(this.el.firstUpdateDataRef, true);
   },
 
   onConnected: function() {
@@ -517,9 +521,9 @@ AFRAME.registerComponent('networked', {
 
   /* Receiving updates */
 
-  networkUpdate: function(entityData, isFullSync) {
-    const entityDataOwner = uuid.stringify(entityData[1]);
-    const entityDataLastOwnerTime = entityData[2] + BASE_OWNER_TIME;
+  networkUpdate: function(entityDataRef, isFullSync) {
+    const entityDataOwner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
+    const entityDataLastOwnerTime = refGetInt(entityDataRef, 2) + BASE_OWNER_TIME;
 
     // Avoid updating components if the entity data received did not come from the current owner.
     if (entityDataLastOwnerTime < this.lastOwnerTime ||
@@ -544,50 +548,57 @@ AFRAME.registerComponent('networked', {
       this.onOwnershipChangedEvent.newOwner = newOwner;
       this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
     }
-    if (isFullSync && this.data.persistent !== entityData[5]) {
-      this.el.setAttribute('networked', { persistent: entityData[5] });
+    if (isFullSync && this.data.persistent !== refGetBool(entityDataRef, 5)) {
+      this.el.setAttribute('networked', { persistent: refGetBool(entityDataRef, 5) });
     }
-    this.updateNetworkedComponents(entityData, isFullSync);
+    this.updateNetworkedComponents(entityDataRef, isFullSync);
   },
 
-  updateNetworkedComponents: function(entityData, isFullSync) {
+  updateNetworkedComponents: function(entityDataRef, isFullSync) {
     this.startLerpingFrame();
 
-    for (let iData = isFullSync ? 7 : 3; iData < entityData.length; iData++) {
-      const componentData = entityData[iData];
-      const componentIndex = componentData[0];
+    const len = entityDataRef.length();
+
+    for (let iData = isFullSync ? 7 : 3; iData < len; iData++) {
+      const componentDataRef = tmpRef;
+      refCp(entityDataRef, componentDataRef);
+      refAdvanceToIndexGet(componentDataRef, iData);
+      const componentIndex = refGetInt(componentDataRef, 0);
       const componentSchema = this.componentSchemas[componentIndex];
       const el = this.getCachedElement(componentIndex);
 
-      if (el === null || componentData === null || componentData === undefined) {
-        continue;
-      }
+      if (el === null) continue;
 
       const componentName = componentSchema.component ? componentSchema.component : componentSchema;
 
       if (!OBJECT3D_COMPONENTS.includes(componentName)) {
         if (componentSchema.property) {
-          el.setAttribute(componentName, componentSchema.property, componentData[1]);
+          el.setAttribute(componentName, componentSchema.property, refGetToObject(componentDataRef, 1));
         } else {
           if (!aframeSchemaSortedKeys.has(componentName)) {
             aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
           }
 
-          if (componentData.length > 1) {
+          const componentDataLength = componentDataRef.length();
+
+          if (componentDataLength > 1) {
             const attributeValue = {};
             const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-            for (let j = 1; j < componentData.length; j += 2) {
-              attributeValue[aframeSchemaKeys[componentData[j]]] = componentData[j + 1];
+            for (let j = 1; j < componentDataLength; j += 2) {
+              const key = refGetInt(componentDataRef, j);
+              const value = refGetToObject(componentDataRef, j + 1);
+
+              attributeValue[aframeSchemaKeys[key]] = value;
             }
 
             el.setAttribute(componentName, attributeValue);
           }
         }
       } else {
-        const x = componentData[1];
-        const y = componentData[2];
-        const z = componentData[3];
+        const x = refGetNumeric(componentDataRef, 1);
+        const y = refGetNumeric(componentDataRef, 2);
+        const z = refGetNumeric(componentDataRef, 3);
 
         let lerper;
 

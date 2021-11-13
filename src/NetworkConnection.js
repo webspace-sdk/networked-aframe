@@ -1,7 +1,11 @@
 /* global NAF */
 
 const flexbuffers = require('flatbuffers/js/flexbuffers');
+const { refReset, refGetBool } = require('./FlexBufferUtils');
+
 var ReservedDataType = { Update: 'u', Remove: 'r' };
+
+const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
 
 const base64ToArrayBuffer = (base64) => {
     var binary_string = window.atob(base64);
@@ -204,14 +208,13 @@ class NetworkConnection {
   }
 
   receivedData(fromClientId, data, source) {
-    const bytes = base64ToArrayBuffer(data);
-    const msg = flexbuffers.toObject(bytes);
+    refReset(tmpRef, base64ToArrayBuffer(data));
 
     // First bool is the data type
-    const dataType = msg[0] ? "u" : "r";
+    const dataType = refGetBool(tmpRef, 0) ? "u" : "r";
 
     if (this.dataChannelSubs.hasOwnProperty(dataType)) {
-      this.dataChannelSubs[dataType](fromClientId, dataType, msg, source);
+      this.dataChannelSubs[dataType](fromClientId, dataType, tmpRef, source);
     } else {
       NAF.log.write('NetworkConnection@receivedData: ' + dataType + ' has not been subscribed to yet. Call subscribeToDataChannel()');
     }

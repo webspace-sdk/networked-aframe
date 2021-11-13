@@ -1,6 +1,11 @@
 /* global NAF */
 var ChildEntityCache = require('./ChildEntityCache');
 const uuid = require("uuid")
+const flexbuffers = require('flatbuffers/js/flexbuffers');
+const { refCp, refAdvanceToIndexGet, refGetString, refGetBool, refGetUuidBytes } = require('./FlexBufferUtils');
+
+const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
+const uuidByteBuf = [];
 
 class NetworkEntities {
 
@@ -17,70 +22,77 @@ class NetworkEntities {
     this.entities[networkId] = entity;
   }
 
-  createRemoteEntity(entityData) {
-    NAF.log.write('Creating remote entity', entityData);
+  createRemoteEntity(entityDataRef) {
+    const networkId = refGetString(entityDataRef, 0);
+    const template = refGetString(entityDataRef, 4);
 
-    const networkId = entityData[0];
-    const template = entityData[4];
+    NAF.log.write('Creating remote entity', networkId, template);
 
     const el = NAF.schemas.getCachedTemplate(template);
 
-    this.addNetworkComponent(el, entityData);
+    this.addNetworkComponent(el, entityDataRef);
 
     this.registerEntity(networkId, el);
 
     return el;
   }
 
-  addNetworkComponent(entity, entityData) {
-    const networkId = entityData[0];
-    const owner = uuid.stringify(entityData[1]);
-    const creator = uuid.stringify(entityData[3]);
-    const template = entityData[4];
-    const persistent = entityData[5];
+  addNetworkComponent(entity, entityDataRef) {
+    const networkId = refGetString(entityDataRef, 0);
+    const owner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
+    const creator = uuid.stringify(refGetUuidBytes(entityDataRef, 3, uuidByteBuf));
+    const template = refGetString(entityDataRef, 4);
+    const persistent = refGetBool(entityDataRef, 5);
 
     entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
 
-    entity.firstUpdateData = entityData;
+    entity.firstUpdateDataRef = entityDataRef;
   }
 
-  updateEntity(client, dataType, msg, source) {
+  updateEntity(client, dataType, msgRef, source) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
 
-    const isFullSync = msg[1];
-    for (let i = 2; i < msg.length; i++) {
-      const entityData = msg[i];
+    const msgLen = msgRef.length();
+    const isFullSync = refGetBool(msgRef, 1);
 
-      const networkId = entityData[0];
-      const owner = uuid.stringify(entityData[1]);
+    for (let i = 2; i < msgLen; i++) {
+      const entityDataRef = tmpRef; // Re-used cache, be careful
+      refCp(msgRef, entityDataRef);
+      refAdvanceToIndexGet(entityDataRef, i);
+
+      const networkId = refGetString(entityDataRef, 0);
+      const owner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
 
       if (this.hasEntity(networkId)) {
-        this.entities[networkId].components.networked.networkUpdate(entityData, isFullSync);
+        this.entities[networkId].components.networked.networkUpdate(entityDataRef, isFullSync);
       } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
         if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
           NAF.log.write('Ignoring first sync from disallowed source', source);
         } else {
-          if (entityData[5] /* persistent */) {
+          if (refGetBool(entityDataRef, 5) /* persistent */) {
             // If we receive a firstSync for a persistent entity that we don't have yet,
             // we assume the scene will create it at some point, so stash the update for later use.
-            this._persistentFirstSyncs[networkId] = entityData;
+            // Make a copy since above we were using tempRef
+            const entityDataRefCopy = new flexbuffers.toReference(msgRef.dataView.buffer);
+            refCp(entityDataRef, entityDataRefCopy);
+            this._persistentFirstSyncs[networkId] = entityDataRefCopy;
           } else {
-            this.receiveFirstUpdateFromEntity(entityData);
+            this.receiveFirstUpdateFromEntity(entityDataRef);
           }
         }
       }
     }
   }
 
-  receiveFirstUpdateFromEntity(entityData) {
-    var networkId = entityData[0];
-    var parent = entityData[6];
+  receiveFirstUpdateFromEntity(entityDataRef) {
+    var networkId = refGetString(entityDataRef, 0);
+    var parent = refGetString(entityDataRef, 6);
 
     var parentNotCreatedYet = parent && !this.hasEntity(parent);
     if (parentNotCreatedYet) {
-      this.childCache.addChild(parent, entityData);
+      this.childCache.addChild(parent, entityDataRef);
     } else {
-      var remoteEntity = this.createRemoteEntity(entityData);
+      var remoteEntity = this.createRemoteEntity(entityDataRef);
       this.createAndAppendChildren(networkId, remoteEntity);
       this.addEntityToPage(remoteEntity, parent);
     }
@@ -89,19 +101,18 @@ class NetworkEntities {
   createAndAppendChildren(parentId, parentEntity) {
     var children = this.childCache.getChildren(parentId);
     for (var i = 0; i < children.length; i++) {
-      var childEntityData = children[i];
-      var childId = childEntityData.networkId;
+      var childEntityDataRef = children[i];
+      var childId = refGetString(childEntityDataRef, 0);
       if (this.hasEntity(childId)) {
         NAF.log.warn(
           'Tried to instantiate entity multiple times',
           childId,
-          childEntityData,
           'Existing entity:',
           this.getEntity(childId)
         );
         continue;
       }
-      var childEntity = this.createRemoteEntity(childEntityData);
+      var childEntity = this.createRemoteEntity(childEntityDataRef);
       this.createAndAppendChildren(childId, childEntity);
       parentEntity.appendChild(childEntity);
     }
@@ -132,9 +143,9 @@ class NetworkEntities {
     }
   }
 
-  removeRemoteEntity(client, dataType, msg, source) {
+  removeRemoteEntity(client, dataType, msgRef, source) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-    const networkId = msg[1];
+    const networkId = refGetString(msgRef, 0);
     return this.removeEntity(networkId);
   }
 
