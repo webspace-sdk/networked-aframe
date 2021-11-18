@@ -1,5 +1,6 @@
 /* global AFRAME, NAF, THREE */
 const flexbuffers = require('flatbuffers/js/flexbuffers');
+const { Builder } = require('flatbuffers/js/builder');
 const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet, refGetBool, refGetUuidBytes } = require('../FlexBufferUtils');
 const uuid = require("uuid")
 const deepEqual = require('../DeepEquals');
@@ -11,32 +12,69 @@ const tmpPosition = new THREE.Vector3();
 const tmpQuaternion = new THREE.Quaternion();
 const BASE_OWNER_TIME = 1636600000000;
 
+const FBMessage = require('../schema/networked-aframe/message').Message;
+const FBFullUpdateData = require('../schema/networked-aframe/full-update-data').FullUpdateData;
+const FBUpdateOp = require('../schema/networked-aframe/update-op').UpdateOp;
+
 const uuidByteBuf = [];
+const opOffsetBuf = [];
+
+function uuidParse(uuid, arr) {
+  arr.length = 16;
+
+  var v;
+
+  arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
+  arr[1] = v >>> 16 & 0xff;
+  arr[2] = v >>> 8 & 0xff;
+  arr[3] = v & 0xff; // Parse ........-####-....-....-............
+
+  arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
+  arr[5] = v & 0xff; // Parse ........-....-####-....-............
+
+  arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
+  arr[7] = v & 0xff; // Parse ........-....-....-####-............
+
+  arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
+  arr[9] = v & 0xff; // Parse ........-....-....-....-############
+  // (Use "/" to avoid 32-bit truncation when bit-shifting high-order bytes)
+
+  arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 0x10000000000 & 0xff;
+  arr[11] = v / 0x100000000 & 0xff;
+  arr[12] = v >>> 24 & 0xff;
+  arr[13] = v >>> 16 & 0xff;
+  arr[14] = v >>> 8 & 0xff;
+  arr[15] = v & 0xff;
+  return arr;
+}
+
 const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
 
-// Flexbuffer
-const builder = new flexbuffers.builder();
+// Flatbuffers builder
+const flatbuilder = new Builder(1024);
+
+// Flexbuffer builder
+const flexbuilder = new flexbuffers.builder();
 
 // Don't dedup because we want to re-use builder
-builder.dedupStrings = false;
-builder.dedupKeys = false;
-builder.dedupKeyVectors = false;
+flexbuilder.dedupStrings = false;
+flexbuilder.dedupKeys = false;
+flexbuilder.dedupKeyVectors = false;
 
-const builderUintView = new Uint8Array(builder.buffer);
-const resetBuilder = () => {
-  builderUintView.fill(0);
-  builder.stack.length = 0;
-  builder.stackPointers.length = 0;
-  builder.offset = 0;
-  builder.finished = false;
+const flexbuilderUintView = new Uint8Array(flexbuilder.buffer);
+const resetFlexBuilder = () => {
+  flexbuilderUintView.fill(0);
+  flexbuilder.stack.length = 0;
+  flexbuilder.stackPointers.length = 0;
+  flexbuilder.offset = 0;
+  flexbuilder.finished = false;
 };
 
 // Map of aframe component name -> sorted attribute list
 const aframeSchemaSortedKeys = new Map();
 
-const arrayBufferToBase64 = ( buffer ) => {
+const typedArrayToBase64 = ( bytes ) => {
     let binary = '';
-    const bytes = new Uint8Array( buffer );
     let len = bytes.byteLength;
     for (let i = 0; i < len; i++) {
         binary += String.fromCharCode( bytes[ i ] );
@@ -89,11 +127,6 @@ AFRAME.registerSystem("networked", {
       if (!NAF.connection.adapter) return;
       if (this.el.clock.elapsedTime < this.nextSyncTime) return;
 
-      resetBuilder();
-      builder.startVector();
-      builder.add(true); // is update
-      builder.add(false); // is full
-
       let send = false;
 
       for (let i = 0, l = this.components.length; i < l; i++) {
@@ -106,17 +139,38 @@ AFRAME.registerSystem("networked", {
           continue;
         }
 
-        if (!c.pushComponentsDataToBuilder(false)) continue;
-        send = true;
-      }
+        resetFlexBuilder();
 
-      builder.end();
+        if (!c.pushComponentsDataToFlexBuilder(false)) continue;
+
+        if (!send) {
+          flatbuilder.clear();
+          opOffsetBuf.length = 0;
+          send = true;
+        }
+
+        const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
+        const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(c.data.owner, uuidByteBuf));
+
+        FBUpdateOp.startUpdateOp(flatbuilder); 
+        FBUpdateOp.addNetworkId(flatbuilder, c.data.networkId);
+        FBUpdateOp.addOwner(flatbuilder, ownerOffset)
+        FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME)
+        FBUpdateOp.addComponents(flatbuilder, componentsOffset);
+        opOffsetBuf.push(FBUpdateOp.endUpdateOp(flatbuilder));
+      }
 
       if (send) {
-        const buf = builder.finish().buffer;
-        NAF.connection.broadcastData(arrayBufferToBase64(buf));
-      }
+        const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf);
+        FBMessage.startMessage(flatbuilder);
+        FBMessage.addUpdates(flatbuilder, updatesOffset);
+        FBMessage.endMessage(flatbuilder);
 
+        flatbuilder.finish();
+
+        NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+      }
+ 
       this.updateNextSyncTime();
     };
   })(),
@@ -192,7 +246,7 @@ AFRAME.registerComponent('networked', {
       this.registerEntity(this.data.networkId);
     }
 
-    this.lastOwnerTime = -1;
+    this.lastOwnerTime = 1;
 
     if (NAF.clientId) {
       this.onConnected();
@@ -337,20 +391,44 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
-    resetBuilder();
-    builder.startVector();
-    builder.add(true); // is update
-    builder.add(true); // is full
+    resetFlexBuilder();
 
     // Components
-    this.pushComponentsDataToBuilder(true);
+    this.pushComponentsDataToFlexBuilder(true);
 
-    builder.end();
+    flatbuilder.clear();
+
+    const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
+
+    const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(this.data.owner, uuidByteBuf));
+    const fullUpdateDataOffset = FBFullUpdateData.createFullUpdateData(flatbuilder,
+        FBFullUpdateData.createCreatorVector(flatbuilder, uuidParse(this.data.creator, uuidByteBuf)),
+        flatbuilder.createString(this.data.template),
+        this.data.persistent,
+        flatbuilder.createString(this.getParentId())
+      );
+
+    FBUpdateOp.startUpdateOp(flatbuilder); 
+    FBUpdateOp.addNetworkId(flatbuilder, this.data.networkId);
+    FBUpdateOp.addFullUpdateData(flatbuilder, fullUpdateDataOffset);
+    FBUpdateOp.addOwner(flatbuilder, ownerOffset)
+    FBUpdateOp.addLastOwnerTime(flatbuilder, this.lastOwnerTime - BASE_OWNER_TIME)
+    FBUpdateOp.addComponents(flatbuilder, componentsOffset);
+
+    opOffsetBuf.length = 0;
+    opOffsetBuf.push(FBUpdateOp.endUpdateOp(flatbuilder));
+
+    const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf);
+    FBMessage.startMessage(flatbuilder);
+    FBMessage.addUpdates(flatbuilder, updatesOffset);
+    FBMessage.endMessage(flatbuilder);
+
+    flatbuilder.finish();
 
     if (targetClientId) {
-      NAF.connection.sendDataGuaranteed(targetClientId, arrayBufferToBase64(builder.finish()));
+      NAF.connection.sendDataGuaranteed(targetClientId, typedArrayToBase64(flatbuilder.asUint8Array()));
     } else {
-      NAF.connection.broadcastDataGuaranteed(arrayBufferToBase64(builder.finish()));
+      NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
     }
   },
 
@@ -376,7 +454,7 @@ AFRAME.registerComponent('networked', {
     }
   },
 
-  pushComponentsDataToBuilder: function(fullSync) {
+  pushComponentsDataToFlexBuilder: function(fullSync) {
     let hadComponents = false;
 
     for (var i = 0; i < this.componentSchemas.length; i++) {
@@ -397,18 +475,7 @@ AFRAME.registerComponent('networked', {
       if (this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
         // Components preamble
         if (!hadComponents) {
-          builder.startVector();
-          builder.add(this.data.networkId);
-          builder.add([...uuid.parse(this.data.owner)]);
-          builder.add(this.lastOwnerTime - BASE_OWNER_TIME); // 32 bits
-
-          if (fullSync) {
-            // Full preamble
-            builder.add([...uuid.parse(this.data.creator)]);
-            builder.add(this.data.template);
-            builder.add(this.data.persistent);
-            builder.add(this.getParentId());
-          }
+          flexbuilder.startVector();
         }
 
         hadComponents = true;
@@ -419,13 +486,13 @@ AFRAME.registerComponent('networked', {
           dataToSync = this.positionNormalizer(dataToSync, this.el);
         }
 
-        builder.startVector();
-        builder.addInt(i);
+        flexbuilder.startVector();
+        flexbuilder.addInt(i);
 
         if (OBJECT3D_COMPONENTS.includes(componentName)) {
-          builder.addFloat(Math.fround(dataToSync.x));
-          builder.addFloat(Math.fround(dataToSync.y));
-          builder.addFloat(Math.fround(dataToSync.z));
+          flexbuilder.addFloat(Math.fround(dataToSync.x));
+          flexbuilder.addFloat(Math.fround(dataToSync.y));
+          flexbuilder.addFloat(Math.fround(dataToSync.z));
         } else {
           if (typeof dataToSync === 'object') {
             if (!aframeSchemaSortedKeys.has(componentName)) {
@@ -438,7 +505,7 @@ AFRAME.registerComponent('networked', {
               const key = aframeSchemaKeys[j];
 
               if (dataToSync[key] !== undefined) {
-                builder.addInt(j);
+                flexbuilder.addInt(j);
 
                 const value = dataToSync[key];
 
@@ -447,13 +514,13 @@ AFRAME.registerComponent('networked', {
                     if (value > 2147483647 || value < -2147483648) {
                       NAF.log.error('64 bit integers not supported', value, componentSchema);
                     } else {
-                      builder.add(value);
+                      flexbuilder.add(value);
                     }
                   } else {
-                    builder.add(Math.fround(value));
+                    flexbuilder.add(Math.fround(value));
                   }
                 } else {
-                  builder.add(value);
+                  flexbuilder.add(value);
                 }
               }
             }
@@ -467,23 +534,23 @@ AFRAME.registerComponent('networked', {
                 if (value > 2147483647 || value < -2147483648) {
                   NAF.log.error('64 bit integers not supported', value, componentSchema);
                 } else {
-                  builder.add(value);
+                  flexbuilder.add(value);
                 }
               } else {
-                builder.add(Math.fround(value));
+                flexbuilder.add(Math.fround(value));
               }
             } else {
-              builder.add(value);
+              flexbuilder.add(value);
             }
           }
         }
 
-        builder.end();
+        flexbuilder.end();
       }
     }
 
     if (hadComponents) {
-      builder.end();
+      flexbuilder.end();
     }
 
     return hadComponents;
@@ -651,22 +718,22 @@ AFRAME.registerComponent('networked', {
   },
 
   remove: function () {
-    if (this.isMine() && NAF.connection.isConnected()) {
-      if (NAF.entities.hasEntity(this.data.networkId)) {
-        resetBuilder();
-        builder.startVector();
-        builder.add(false); // is update (no, is remove)
-        builder.add(this.data.networkId);
-        builder.end();
+    //if (this.isMine() && NAF.connection.isConnected()) {
+    //  if (NAF.entities.hasEntity(this.data.networkId)) {
+    //    resetFlexBuilder();
+    //    flexbuilder.startVector();
+    //    flexbuilder.add(false); // is update (no, is remove)
+    //    flexbuilder.add(this.data.networkId);
+    //    flexbuilder.end();
 
-        NAF.connection.broadcastDataGuaranteed(arrayBufferToBase64(builder.finish()));
-      } else {
-        NAF.log.error("Removing networked entity that is not in entities array.");
-      }
-    }
-    NAF.entities.forgetEntity(this.data.networkId);
-    document.body.dispatchEvent(this.entityRemovedEvent(this.data.networkId));
-    this.el.sceneEl.systems.networked.deregister(this);
+    //    NAF.connection.broadcastDataGuaranteed(arrayBufferToBase64(flexbuilder.finish()));
+    //  } else {
+    //    NAF.log.error("Removing networked entity that is not in entities array.");
+    //  }
+    //}
+    //NAF.entities.forgetEntity(this.data.networkId);
+    //document.body.dispatchEvent(this.entityRemovedEvent(this.data.networkId));
+    //this.el.sceneEl.systems.networked.deregister(this);
   },
 
   entityCreatedEvent() {

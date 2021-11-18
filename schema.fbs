@@ -1,0 +1,27 @@
+namespace NetworkedAframe;
+
+table FullUpdateData {
+  creator:[ubyte] (required);
+  template:string (required);
+  persistent:bool;
+  parent_id:string;
+}
+
+table UpdateOp {
+  network_id:string (required);
+  full_update_data:FullUpdateData;
+  owner:[ubyte];
+  last_owner_time:uint32;
+  components:[ubyte] (required, flexbuffer);
+}
+
+table DeleteOp {
+  network_id:string (required);
+}
+
+table Message {
+  updates:[UpdateOp];
+  deletes:[DeleteOp];
+}
+
+root_type Message;
