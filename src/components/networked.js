@@ -1,6 +1,7 @@
 /* global AFRAME, NAF, THREE */
 const flexbuffers = require('flatbuffers/js/flexbuffers');
 const { Builder } = require('flatbuffers/js/builder');
+const { ByteBuffer } = require('flatbuffers/js/byte-buffer');
 const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet, refGetBool, refGetUuidBytes } = require('../FlexBufferUtils');
 const uuid = require("uuid")
 const deepEqual = require('../DeepEquals');
@@ -18,6 +19,17 @@ const FBUpdateOp = require('../schema/networked-aframe/update-op').UpdateOp;
 
 const uuidByteBuf = [];
 const opOffsetBuf = [];
+
+        //const bytes = flatbuilder.asUint8Array();
+        //const update = new FBUpdateOp();
+        //const buf = new ByteBuffer(bytes);
+        //const message = new FBMessage();
+        //FBMessage.getRootAsMessage(buf, message);
+
+        //for (let i = 0, l = message.updatesLength(); i < l; i++) {
+        //  message.updates(i, update);
+        //  console.log(update.unpack());
+        //}
 
 function uuidParse(uuid, arr) {
   arr.length = 16;
@@ -128,6 +140,7 @@ AFRAME.registerSystem("networked", {
       if (this.el.clock.elapsedTime < this.nextSyncTime) return;
 
       let send = false;
+      let sendGuaranteed = false;
 
       for (let i = 0, l = this.components.length; i < l; i++) {
         const c = this.components[i];
@@ -139,9 +152,16 @@ AFRAME.registerSystem("networked", {
           continue;
         }
 
+        let isFull = false;
+
+        if (c.pendingFullSync) {
+          isFull = true;
+          c.pendingFullSync = false;
+        }
+
         resetFlexBuilder();
 
-        if (!c.pushComponentsDataToFlexBuilder(false)) continue;
+        if (!c.pushComponentsDataToFlexBuilder(isFull)) continue;
 
         if (!send) {
           flatbuilder.clear();
@@ -152,11 +172,30 @@ AFRAME.registerSystem("networked", {
         const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
         const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(c.data.owner, uuidByteBuf));
 
+        let fullUpdateDataOffset = null;
+
+        if (isFull) {
+          sendGuaranteed = true;
+
+          fullUpdateDataOffset = FBFullUpdateData.createFullUpdateData(flatbuilder,
+             FBFullUpdateData.createCreatorVector(flatbuilder, uuidParse(c.data.creator, uuidByteBuf)),
+             flatbuilder.createSharedString(c.data.template),
+             c.data.persistent,
+             flatbuilder.createSharedString(c.getParentId())
+           );
+        }
+
+        const networkIdOffset = flatbuilder.createSharedString(c.data.networkId);
         FBUpdateOp.startUpdateOp(flatbuilder); 
-        FBUpdateOp.addNetworkId(flatbuilder, c.data.networkId);
+        FBUpdateOp.addNetworkId(flatbuilder, networkIdOffset);
         FBUpdateOp.addOwner(flatbuilder, ownerOffset)
         FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME)
         FBUpdateOp.addComponents(flatbuilder, componentsOffset);
+
+        if (fullUpdateDataOffset !== null) {
+          FBUpdateOp.addFullUpdateData(flatbuilder, fullUpdateDataOffset);
+        }
+
         opOffsetBuf.push(FBUpdateOp.endUpdateOp(flatbuilder));
       }
 
@@ -164,11 +203,15 @@ AFRAME.registerSystem("networked", {
         const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf);
         FBMessage.startMessage(flatbuilder);
         FBMessage.addUpdates(flatbuilder, updatesOffset);
-        FBMessage.endMessage(flatbuilder);
+        const messageOffset = FBMessage.endMessage(flatbuilder);
 
-        flatbuilder.finish();
+        flatbuilder.finish(messageOffset);
 
-        NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+        if (sendGuaranteed) {
+          NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+        } else {
+          NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+        }
       }
  
       this.updateNextSyncTime();
@@ -209,6 +252,7 @@ AFRAME.registerComponent('networked', {
     this.conversionEuler = new THREE.Euler();
     this.conversionEuler.order = "YXZ";
     this.lerpers = [];
+    this.pendingFullSync = false;
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -391,45 +435,7 @@ AFRAME.registerComponent('networked', {
       return;
     }
 
-    resetFlexBuilder();
-
-    // Components
-    this.pushComponentsDataToFlexBuilder(true);
-
-    flatbuilder.clear();
-
-    const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
-
-    const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(this.data.owner, uuidByteBuf));
-    const fullUpdateDataOffset = FBFullUpdateData.createFullUpdateData(flatbuilder,
-        FBFullUpdateData.createCreatorVector(flatbuilder, uuidParse(this.data.creator, uuidByteBuf)),
-        flatbuilder.createString(this.data.template),
-        this.data.persistent,
-        flatbuilder.createString(this.getParentId())
-      );
-
-    FBUpdateOp.startUpdateOp(flatbuilder); 
-    FBUpdateOp.addNetworkId(flatbuilder, this.data.networkId);
-    FBUpdateOp.addFullUpdateData(flatbuilder, fullUpdateDataOffset);
-    FBUpdateOp.addOwner(flatbuilder, ownerOffset)
-    FBUpdateOp.addLastOwnerTime(flatbuilder, this.lastOwnerTime - BASE_OWNER_TIME)
-    FBUpdateOp.addComponents(flatbuilder, componentsOffset);
-
-    opOffsetBuf.length = 0;
-    opOffsetBuf.push(FBUpdateOp.endUpdateOp(flatbuilder));
-
-    const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf);
-    FBMessage.startMessage(flatbuilder);
-    FBMessage.addUpdates(flatbuilder, updatesOffset);
-    FBMessage.endMessage(flatbuilder);
-
-    flatbuilder.finish();
-
-    if (targetClientId) {
-      NAF.connection.sendDataGuaranteed(targetClientId, typedArrayToBase64(flatbuilder.asUint8Array()));
-    } else {
-      NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
-    }
+    this.pendingFullSync = true;
   },
 
   getCachedElement(componentSchemaIndex) {
@@ -589,6 +595,7 @@ AFRAME.registerComponent('networked', {
   /* Receiving updates */
 
   networkUpdate: function(entityDataRef, isFullSync) {
+    uuidByteBuf.length = 0;
     const entityDataOwner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
     const entityDataLastOwnerTime = refGetInt(entityDataRef, 2) + BASE_OWNER_TIME;
 
