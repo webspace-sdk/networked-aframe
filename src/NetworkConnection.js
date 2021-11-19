@@ -1,27 +1,46 @@
 /* global NAF */
 
-const flexbuffers = require('flatbuffers/js/flexbuffers');
-const { refReset, refGetBool } = require('./FlexBufferUtils');
+const { ByteBuffer } = require('flatbuffers/js/byte-buffer');
+const { Builder } = require('flatbuffers/js/builder');
 
 var ReservedDataType = { Update: 'u', Remove: 'r' };
 
-const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
+// Flatbuffers builder
+const flatbuilder = new Builder(1024);
 
-const base64ToArrayBuffer = (base64) => {
+const FBMessage = require('./schema/networked-aframe/message').Message;
+const FBUpdateOp = require('./schema/networked-aframe/update-op').UpdateOp;
+const FBDeleteOp = require('./schema/networked-aframe/delete-op').DeleteOp;
+const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp;
+
+const messageRef = new FBMessage();
+const updateRef = new FBUpdateOp();
+const deleteRef = new FBDeleteOp();
+const customRef = new FBCustomOp();
+
+const typedArrayToBase64 = ( bytes ) => {
+    let binary = '';
+    for (let i = 0, l = bytes.byteLength; i < l; i++) {
+        binary += String.fromCharCode( bytes[ i ] );
+    }
+    return window.btoa( binary );
+};
+
+const base64ToUint8Array = (base64) => {
     var binary_string = window.atob(base64);
     var len = binary_string.length;
     var bytes = new Uint8Array(len);
     for (var i = 0; i < len; i++) {
         bytes[i] = binary_string.charCodeAt(i);
     }
-    return bytes.buffer;
+    return bytes;
 };
 
 class NetworkConnection {
 
   constructor(networkEntities) {
     this.entities = networkEntities;
-    this.setupDefaultDataSubscriptions();
+    this.dataChannelSubs = {};
 
     this.connectedClients = {};
     this.activeDataChannels = {};
@@ -31,16 +50,6 @@ class NetworkConnection {
     this.adapter = adapter;
   }
 
-  setupDefaultDataSubscriptions() {
-    this.dataChannelSubs = {};
-
-    this.dataChannelSubs[ReservedDataType.Update]
-        = this.entities.updateEntity.bind(this.entities);
-
-    this.dataChannelSubs[ReservedDataType.Remove]
-        = this.entities.removeRemoteEntity.bind(this.entities);
-  }
-
   connect(serverUrl, appName, roomName, enableAudio = false) {
     NAF.app = appName;
     NAF.room = roomName;
@@ -48,13 +57,6 @@ class NetworkConnection {
     this.adapter.setServerUrl(serverUrl);
     this.adapter.setApp(appName);
     this.adapter.setRoom(roomName);
-
-    var webrtcOptions = {
-      audio: enableAudio,
-      video: false,
-      datachannel: true
-    };
-    this.adapter.setWebRtcOptions(webrtcOptions);
 
     this.adapter.setServerConnectListeners(
       this.connectSuccess.bind(this),
@@ -162,43 +164,78 @@ class NetworkConnection {
     return this.activeDataChannels.hasOwnProperty(clientId) && this.activeDataChannels[clientId];
   }
 
-  broadcastData(dataType, data) {
-    this.adapter.broadcastData(dataType, data);
+  broadcastData(data) {
+    this.adapter.broadcastData(data);
   }
 
-  broadcastDataGuaranteed(dataType, data) {
-    this.adapter.broadcastDataGuaranteed(dataType, data);
+  broadcastDataGuaranteed(data) {
+    this.adapter.broadcastDataGuaranteed(data);
   }
 
-  sendData(toClientId, dataType, data, guaranteed) {
+  broadcastCustomData(dataType, customData, guaranteed) {
+    this.fillBuilderWithCustomData(dataType, customData);
+
+    if (guaranteed) {
+      NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+    } else {
+      NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+    }
+  }
+
+  broadcastCustomDataGuaranteed(dataType, customData) {
+    this.broadcastCustomData(dataType, customData, true);
+  }
+
+  sendData(data, toClientId, guaranteed) {
     if (this.hasActiveDataChannel(toClientId)) {
       if (guaranteed) {
-        this.adapter.sendDataGuaranteed(toClientId, dataType, data);
+        this.adapter.sendDataGuaranteed(data, toClientId);
       } else {
-        this.adapter.sendData(toClientId, dataType, data);
+        this.adapter.sendData(data, toClientId);
       }
     } else {
       // console.error("NOT-CONNECTED", "not connected to " + toClient);
     }
   }
 
-  sendDataGuaranteed(toClientId, dataType, data) {
-    this.sendData(toClientId, dataType, data, true);
+  sendDataGuaranteed(data, toClientId) {
+    this.sendData(data, toClientId, true);
+  }
+
+  fillBuilderWithCustomData(dataType, customData) {
+    flatbuilder.clear();
+
+    const customOffset = FBCustomOp.createCustomOp(flatbuilder, 
+      flatbuilder.createSharedString(dataType),
+      flatbuilder.createString(JSON.stringify(customData))
+    );
+
+    const customsOffset = FBMessage.createCustomsVector(flatbuilder, [customOffset]);
+    FBMessage.startMessage(flatbuilder);
+    FBMessage.addCustoms(flatbuilder, customsOffset);
+    const messageOffset = FBMessage.endMessage(flatbuilder);
+    flatbuilder.finish(messageOffset);
+  }
+
+  sendCustomData(dataType, customData, toClientId, guaranteed = false) {
+    this.fillBuilderWithCustomData(dataType, customData);
+
+    if (guaranteed) {
+      NAF.connection.sendDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()), toClientId);
+    } else {
+      NAF.connection.sendData(typedArrayToBase64(flatbuilder.asUint8Array()), toClientId);
+    }
+  }
+
+  sendCustomDataGuaranteed(dataType, customData, toClientId) {
+    this.sendCustomData(dataType, customData, toClientId, true);
   }
 
   subscribeToDataChannel(dataType, callback) {
-    if (this.isReservedDataType(dataType)) {
-      NAF.log.error('NetworkConnection@subscribeToDataChannel: ' + dataType + ' is a reserved dataType. Choose another');
-      return;
-    }
     this.dataChannelSubs[dataType] = callback;
   }
 
   unsubscribeToDataChannel(dataType) {
-    if (this.isReservedDataType(dataType)) {
-      NAF.log.error('NetworkConnection@unsubscribeToDataChannel: ' + dataType + ' is a reserved dataType. Choose another');
-      return;
-    }
     delete this.dataChannelSubs[dataType];
   }
 
@@ -207,16 +244,26 @@ class NetworkConnection {
         || dataType == ReservedDataType.Remove;
   }
 
-  receivedData(fromClientId, data, source) {
-    refReset(tmpRef, base64ToArrayBuffer(data));
+  receivedData(data, source) {
+    FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
 
-    // First bool is the data type
-    const dataType = refGetBool(tmpRef, 0) ? "u" : "r";
+    for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
+      messageRef.updates(i, updateRef);
+      this.entities.updateEntity(updateRef, source);
+    }
 
-    if (this.dataChannelSubs.hasOwnProperty(dataType)) {
-      this.dataChannelSubs[dataType](fromClientId, dataType, tmpRef, source);
-    } else {
-      NAF.log.write('NetworkConnection@receivedData: ' + dataType + ' has not been subscribed to yet. Call subscribeToDataChannel()');
+    for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
+      messageRef.deletes(i, deleteRef);
+      this.entities.removeRemoteEntity(deleteRef, source);
+    }
+
+    for (let i = 0, l = messageRef.customsLength(); i < l; i++) {
+      messageRef.customs(i, customRef);
+      const dataType = customRef.dataType();
+
+      if (this.dataChannelSubs[dataType]) {
+        this.dataChannelSubs[dataType](dataType, JSON.parse(customRef.payload()));
+      }
     }
   }
 
@@ -234,8 +281,6 @@ class NetworkConnection {
     this.connectedClients = {};
     this.activeDataChannels = {};
     this.adapter = null;
-
-    this.setupDefaultDataSubscriptions();
 
     document.body.removeEventListener('connected', this.onConnectCallback);
   }

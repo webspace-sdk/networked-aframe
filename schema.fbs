@@ -19,9 +19,15 @@ table DeleteOp {
   network_id:string (required);
 }
 
+table CustomOp {
+  data_type:string (required);
+  payload:string (required);
+}
+
 table Message {
   updates:[UpdateOp];
   deletes:[DeleteOp];
+  customs:[CustomOp];
 }
 
 root_type Message;

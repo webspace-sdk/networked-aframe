@@ -1,11 +1,12 @@
 /* global NAF */
 var ChildEntityCache = require('./ChildEntityCache');
 const uuid = require("uuid")
-const flexbuffers = require('flatbuffers/js/flexbuffers');
-const { refCp, refAdvanceToIndexGet, refGetString, refGetBool, refGetUuidBytes } = require('./FlexBufferUtils');
+const { refGetString } = require('./FlexBufferUtils');
+const FBFullUpdateData = require('./schema/networked-aframe/full-update-data').FullUpdateData;
 
-const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
+const fullUpdateDataRef = new FBFullUpdateData();
 const uuidByteBuf = [];
+uuidByteBuf.length = 16;
 
 class NetworkEntities {
 
@@ -22,77 +23,84 @@ class NetworkEntities {
     this.entities[networkId] = entity;
   }
 
-  createRemoteEntity(entityDataRef) {
-    const networkId = refGetString(entityDataRef, 0);
-    const template = refGetString(entityDataRef, 4);
+  createRemoteEntity(updateRef) {
+    const networkId = updateRef.networkId();
+    const fullUpdateData = updateRef.fullUpdateData(fullUpdateDataRef);
+    const template = fullUpdateData.template();
 
     NAF.log.write('Creating remote entity', networkId, template);
 
     const el = NAF.schemas.getCachedTemplate(template);
 
-    this.addNetworkComponent(el, entityDataRef);
+    this.addNetworkComponent(el, updateRef);
 
     this.registerEntity(networkId, el);
 
     return el;
   }
 
-  addNetworkComponent(entity, entityDataRef) {
-    const networkId = refGetString(entityDataRef, 0);
-    const owner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
-    const creator = uuid.stringify(refGetUuidBytes(entityDataRef, 3, uuidByteBuf));
-    const template = refGetString(entityDataRef, 4);
-    const persistent = refGetBool(entityDataRef, 5);
+  addNetworkComponent(entity, updateRef) {
+    const networkId = updateRef.networkId();
+    const fullUpdateData = updateRef.fullUpdateData(fullUpdateDataRef);
+
+    for (let i = 0; i < 16; i++) {
+      uuidByteBuf[i] = updateRef.owner(i);
+    }
+
+    const owner = uuid.stringify(uuidByteBuf);
+
+    for (let i = 0; i < 16; i++) {
+      uuidByteBuf[i] = fullUpdateData.creator(i);
+    }
+
+    const creator = uuid.stringify(uuidByteBuf);
+    const template = fullUpdateData.template();
+    const persistent = fullUpdateData.persistent();
 
     entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
 
-    entity.firstUpdateDataRef = entityDataRef;
+    entity.firstUpdateRef = updateRef;
   }
 
-  updateEntity(client, dataType, msgRef, source) {
+  updateEntity(updateRef, source) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
 
-    const msgLen = msgRef.length();
-    const isFullSync = refGetBool(msgRef, 1);
+    const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
+    const networkId = updateRef.networkId();
 
-    for (let i = 2; i < msgLen; i++) {
-      const entityDataRef = tmpRef; // Re-used cache, be careful
-      refCp(msgRef, entityDataRef);
-      refAdvanceToIndexGet(entityDataRef, i);
+    for (let i = 0; i < 16; i++) {
+      uuidByteBuf[i] = updateRef.owner(i);
+    }
 
-      const networkId = refGetString(entityDataRef, 0);
-      const owner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
+    const owner = uuid.stringify(uuidByteBuf);
 
-      if (this.hasEntity(networkId)) {
-        this.entities[networkId].components.networked.networkUpdate(entityDataRef, isFullSync);
-      } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
-        if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
-          NAF.log.write('Ignoring first sync from disallowed source', source);
+    if (this.hasEntity(networkId)) {
+      this.entities[networkId].components.networked.networkUpdate(updateRef);
+    } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
+      if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
+        NAF.log.write('Ignoring first sync from disallowed source', source);
+      } else {
+        if (fullUpdateDataRef.persistent()) {
+          // If we receive a firstSync for a persistent entity that we don't have yet,
+          // we assume the scene will create it at some point, so stash the update for later use.
+          // Make a copy since above we were using tempRef
+          this._persistentFirstSyncs[networkId] = updateRef;
         } else {
-          if (refGetBool(entityDataRef, 5) /* persistent */) {
-            // If we receive a firstSync for a persistent entity that we don't have yet,
-            // we assume the scene will create it at some point, so stash the update for later use.
-            // Make a copy since above we were using tempRef
-            const entityDataRefCopy = new flexbuffers.toReference(msgRef.dataView.buffer);
-            refCp(entityDataRef, entityDataRefCopy);
-            this._persistentFirstSyncs[networkId] = entityDataRefCopy;
-          } else {
-            this.receiveFirstUpdateFromEntity(entityDataRef);
-          }
+          this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
         }
       }
     }
   }
 
-  receiveFirstUpdateFromEntity(entityDataRef) {
-    var networkId = refGetString(entityDataRef, 0);
-    var parent = refGetString(entityDataRef, 6);
+  receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef) {
+    var networkId = updateRef.networkId();
+    var parent = fullUpdateDataRef.parentId();
 
     var parentNotCreatedYet = parent && !this.hasEntity(parent);
     if (parentNotCreatedYet) {
-      this.childCache.addChild(parent, entityDataRef);
+      this.childCache.addChild(parent, updateRef);
     } else {
-      var remoteEntity = this.createRemoteEntity(entityDataRef);
+      var remoteEntity = this.createRemoteEntity(updateRef);
       this.createAndAppendChildren(networkId, remoteEntity);
       this.addEntityToPage(remoteEntity, parent);
     }
@@ -101,8 +109,8 @@ class NetworkEntities {
   createAndAppendChildren(parentId, parentEntity) {
     var children = this.childCache.getChildren(parentId);
     for (var i = 0; i < children.length; i++) {
-      var childEntityDataRef = children[i];
-      var childId = refGetString(childEntityDataRef, 0);
+      const childEntityUpdateRef = children[i];
+      const childId = childEntityUpdateRef.networkId();
       if (this.hasEntity(childId)) {
         NAF.log.warn(
           'Tried to instantiate entity multiple times',
@@ -112,7 +120,7 @@ class NetworkEntities {
         );
         continue;
       }
-      var childEntity = this.createRemoteEntity(childEntityDataRef);
+      const childEntity = this.createRemoteEntity(childEntityUpdateRef);
       this.createAndAppendChildren(childId, childEntity);
       parentEntity.appendChild(childEntity);
     }
@@ -143,9 +151,9 @@ class NetworkEntities {
     }
   }
 
-  removeRemoteEntity(client, dataType, msgRef, source) {
+  removeRemoteEntity(deleteRef, source) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-    const networkId = refGetString(msgRef, 0);
+    const networkId = deleteRef.networkId();
     return this.removeEntity(networkId);
   }
 

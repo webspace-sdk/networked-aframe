@@ -1,8 +1,9 @@
 /* global AFRAME, NAF, THREE */
 const flexbuffers = require('flatbuffers/js/flexbuffers');
+const { Reference } = require('flatbuffers/js/flexbuffers/reference');
 const { Builder } = require('flatbuffers/js/builder');
-const { ByteBuffer } = require('flatbuffers/js/byte-buffer');
-const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet, refGetBool, refGetUuidBytes } = require('../FlexBufferUtils');
+const { fromByteWidth } = require('flatbuffers/js/flexbuffers/bit-width-util');
+const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet } = require('../FlexBufferUtils');
 const uuid = require("uuid")
 const deepEqual = require('../DeepEquals');
 const DEG2RAD = THREE.Math.DEG2RAD;
@@ -16,20 +17,11 @@ const BASE_OWNER_TIME = 1636600000000;
 const FBMessage = require('../schema/networked-aframe/message').Message;
 const FBFullUpdateData = require('../schema/networked-aframe/full-update-data').FullUpdateData;
 const FBUpdateOp = require('../schema/networked-aframe/update-op').UpdateOp;
+const FBDeleteOp = require('../schema/networked-aframe/delete-op').DeleteOp;
 
 const uuidByteBuf = [];
 const opOffsetBuf = [];
-
-        //const bytes = flatbuilder.asUint8Array();
-        //const update = new FBUpdateOp();
-        //const buf = new ByteBuffer(bytes);
-        //const message = new FBMessage();
-        //FBMessage.getRootAsMessage(buf, message);
-
-        //for (let i = 0, l = message.updatesLength(); i < l; i++) {
-        //  message.updates(i, update);
-        //  console.log(update.unpack());
-        //}
+const fullUpdateDataRef = new FBFullUpdateData();
 
 function uuidParse(uuid, arr) {
   arr.length = 16;
@@ -87,8 +79,7 @@ const aframeSchemaSortedKeys = new Map();
 
 const typedArrayToBase64 = ( bytes ) => {
     let binary = '';
-    let len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
+    for (let i = 0, l = bytes.byteLength; i < l; i++) {
         binary += String.fromCharCode( bytes[ i ] );
     }
     return window.btoa( binary );
@@ -341,7 +332,7 @@ AFRAME.registerComponent('networked', {
   },
 
   wasCreatedByNetwork: function() {
-    return !!this.el.firstUpdateDataRef;
+    return !!this.el.firstUpdateRef;
   },
 
   initNetworkParent: function() {
@@ -359,16 +350,16 @@ AFRAME.registerComponent('networked', {
 
   applyPersistentFirstSync: function() {
     const { networkId } = this.data;
-    const persistentFirstSyncEntityDataRef = NAF.entities.getPersistentFirstSync(networkId);
-    if (persistentFirstSyncEntityDataRef) {
+    const persistentUpdateRef = NAF.entities.getPersistentFirstSync(networkId);
+    if (persistentUpdateRef) {
       // Can presume offset zero for first full sync
-      this.networkUpdate(persistentFirstSyncEntityDataRef, true);
+      this.networkUpdate(persistentUpdateRef);
       NAF.entities.forgetPersistentFirstSync(networkId);
     }
   },
 
   firstUpdate: function() {
-    this.networkUpdate(this.el.firstUpdateDataRef, true);
+    this.networkUpdate(this.el.firstUpdateRef, true);
   },
 
   onConnected: function() {
@@ -385,7 +376,7 @@ AFRAME.registerComponent('networked', {
           NAF.log.warn("Networked element was removed before ever getting the chance to syncAll");
           return;
         }
-        this.syncAll(undefined, true);
+        this.syncAll();
       }, 0);
     }
 
@@ -430,11 +421,8 @@ AFRAME.registerComponent('networked', {
 
   /* Sending updates */
 
-  syncAll: function(targetClientId, isFirstSync) {
-    if (!this.canSync()) {
-      return;
-    }
-
+  syncAll: function() {
+    if (!this.canSync()) return;
     this.pendingFullSync = true;
   },
 
@@ -594,16 +582,22 @@ AFRAME.registerComponent('networked', {
 
   /* Receiving updates */
 
-  networkUpdate: function(entityDataRef, isFullSync) {
-    uuidByteBuf.length = 0;
-    const entityDataOwner = uuid.stringify(refGetUuidBytes(entityDataRef, 1, uuidByteBuf));
-    const entityDataLastOwnerTime = refGetInt(entityDataRef, 2) + BASE_OWNER_TIME;
+  networkUpdate: function(updateRef) {
+    uuidByteBuf.length = 16;
+    for (let i = 0; i < 16; i++) {
+      uuidByteBuf[i] = updateRef.owner(i);
+    }
+
+    const entityDataOwner = uuid.stringify(uuidByteBuf);
+    const entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
 
     // Avoid updating components if the entity data received did not come from the current owner.
     if (entityDataLastOwnerTime < this.lastOwnerTime ||
           (this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner)) {
       return;
     }
+
+    const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
 
     if (isFullSync && this.data.owner !== entityDataOwner) {
       var wasMine = this.isMine();
@@ -622,9 +616,18 @@ AFRAME.registerComponent('networked', {
       this.onOwnershipChangedEvent.newOwner = newOwner;
       this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
     }
-    if (isFullSync && this.data.persistent !== refGetBool(entityDataRef, 5)) {
-      this.el.setAttribute('networked', { persistent: refGetBool(entityDataRef, 5) });
+    if (isFullSync && this.data.persistent !== fullUpdateDataRef.persistent()) {
+      this.el.setAttribute('networked', { persistent: fullUpdateDataRef.persistent() });
     }
+
+    const componentArray = updateRef.componentsArray();
+    const len = componentArray.byteLength;
+    const dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
+    const byteWidth = dataView.getUint8(len - 1);
+    const packedType = dataView.getUint8(len - 2);
+    const parentWidth = fromByteWidth(byteWidth);
+    const offset = len - byteWidth - 2;
+    const entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
     this.updateNetworkedComponents(entityDataRef, isFullSync);
   },
 
@@ -633,7 +636,7 @@ AFRAME.registerComponent('networked', {
 
     const len = entityDataRef.length();
 
-    for (let iData = isFullSync ? 7 : 3; iData < len; iData++) {
+    for (let iData = 0; iData < len; iData++) {
       const componentDataRef = tmpRef;
       refCp(entityDataRef, componentDataRef);
       refAdvanceToIndexGet(componentDataRef, iData);
@@ -725,22 +728,26 @@ AFRAME.registerComponent('networked', {
   },
 
   remove: function () {
-    //if (this.isMine() && NAF.connection.isConnected()) {
-    //  if (NAF.entities.hasEntity(this.data.networkId)) {
-    //    resetFlexBuilder();
-    //    flexbuilder.startVector();
-    //    flexbuilder.add(false); // is update (no, is remove)
-    //    flexbuilder.add(this.data.networkId);
-    //    flexbuilder.end();
+    if (this.isMine() && NAF.connection.isConnected()) {
+      if (NAF.entities.hasEntity(this.data.networkId)) {
+        flatbuilder.clear();
+        const networkIdOffset = flatbuilder.createString(this.data.networkId);
+        const deleteOffset = FBDeleteOp.createDeleteOp(flatbuilder, networkIdOffset);
+        const deletesOffset = FBMessage.createDeletesVector(flatbuilder, [deleteOffset]);
+        FBMessage.startMessage(flatbuilder);
+        FBMessage.addDeletes(flatbuilder, deletesOffset);
+        const messageOffset = FBMessage.endMessage(flatbuilder);
 
-    //    NAF.connection.broadcastDataGuaranteed(arrayBufferToBase64(flexbuilder.finish()));
-    //  } else {
-    //    NAF.log.error("Removing networked entity that is not in entities array.");
-    //  }
-    //}
-    //NAF.entities.forgetEntity(this.data.networkId);
-    //document.body.dispatchEvent(this.entityRemovedEvent(this.data.networkId));
-    //this.el.sceneEl.systems.networked.deregister(this);
+        flatbuilder.finish(messageOffset);
+
+        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+      } else {
+        NAF.log.error("Removing networked entity that is not in entities array.");
+      }
+    }
+    NAF.entities.forgetEntity(this.data.networkId);
+    document.body.dispatchEvent(this.entityRemovedEvent(this.data.networkId));
+    this.el.sceneEl.systems.networked.deregister(this);
   },
 
   entityCreatedEvent() {
