@@ -244,12 +244,18 @@ class NetworkConnection {
         || dataType == ReservedDataType.Remove;
   }
 
+  // Returns true if a new entity was created
   receivedData(data, source) {
+    let createdEntity = false;
+
     FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
 
     for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
       messageRef.updates(i, updateRef);
-      this.entities.updateEntity(updateRef, source);
+
+      if (this.entities.updateEntity(updateRef, source)) {
+        createdEntity = true;
+      }
     }
 
     for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
@@ -265,6 +271,8 @@ class NetworkConnection {
         this.dataChannelSubs[dataType](dataType, JSON.parse(customRef.payload()));
       }
     }
+
+    return createdEntity;
   }
 
   getServerTime() {

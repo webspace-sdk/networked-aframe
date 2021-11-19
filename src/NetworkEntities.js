@@ -1,7 +1,6 @@
 /* global NAF */
 var ChildEntityCache = require('./ChildEntityCache');
 const uuid = require("uuid")
-const { refGetString } = require('./FlexBufferUtils');
 const FBFullUpdateData = require('./schema/networked-aframe/full-update-data').FullUpdateData;
 
 const fullUpdateDataRef = new FBFullUpdateData();
@@ -62,8 +61,9 @@ class NetworkEntities {
     entity.firstUpdateRef = updateRef;
   }
 
+  // Returns true if a new entity was created.
   updateEntity(updateRef, source) {
-    if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
+    if (NAF.options.syncSource && source !== NAF.options.syncSource) return false;
 
     const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
     const networkId = updateRef.networkId();
@@ -88,6 +88,8 @@ class NetworkEntities {
         } else {
           this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
         }
+
+        return true;
       }
     }
   }
