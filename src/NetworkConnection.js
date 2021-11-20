@@ -1,6 +1,5 @@
-/* global NAF */
+/* global AFRAME, NAF */
 
-const { ByteBuffer } = require('flatbuffers/js/byte-buffer');
 const { Builder } = require('flatbuffers/js/builder');
 
 var ReservedDataType = { Update: 'u', Remove: 'r' };
@@ -9,14 +8,7 @@ var ReservedDataType = { Update: 'u', Remove: 'r' };
 const flatbuilder = new Builder(1024);
 
 const FBMessage = require('./schema/networked-aframe/message').Message;
-const FBUpdateOp = require('./schema/networked-aframe/update-op').UpdateOp;
-const FBDeleteOp = require('./schema/networked-aframe/delete-op').DeleteOp;
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp;
-
-const messageRef = new FBMessage();
-const updateRef = new FBUpdateOp();
-const deleteRef = new FBDeleteOp();
-const customRef = new FBCustomOp();
 
 const typedArrayToBase64 = ( bytes ) => {
     let binary = '';
@@ -24,16 +16,6 @@ const typedArrayToBase64 = ( bytes ) => {
         binary += String.fromCharCode( bytes[ i ] );
     }
     return window.btoa( binary );
-};
-
-const base64ToUint8Array = (base64) => {
-    var binary_string = window.atob(base64);
-    var len = binary_string.length;
-    var bytes = new Uint8Array(len);
-    for (var i = 0; i < len; i++) {
-        bytes[i] = binary_string.charCodeAt(i);
-    }
-    return bytes;
 };
 
 class NetworkConnection {
@@ -246,33 +228,7 @@ class NetworkConnection {
 
   // Returns true if a new entity was created
   receivedData(data, source, sender) {
-    let createdEntity = false;
-
-    FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
-
-    for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
-      messageRef.updates(i, updateRef);
-
-      if (this.entities.updateEntity(updateRef, source, sender)) {
-        createdEntity = true;
-      }
-    }
-
-    for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
-      messageRef.deletes(i, deleteRef);
-      this.entities.removeRemoteEntity(deleteRef, source, sender);
-    }
-
-    for (let i = 0, l = messageRef.customsLength(); i < l; i++) {
-      messageRef.customs(i, customRef);
-      const dataType = customRef.dataType();
-
-      if (this.dataChannelSubs[dataType]) {
-        this.dataChannelSubs[dataType](dataType, JSON.parse(customRef.payload()));
-      }
-    }
-
-    return createdEntity;
+    AFRAME.scenes[0].systems.networked.enqueueIncoming(data, source, sender);
   }
 
   getServerTime() {

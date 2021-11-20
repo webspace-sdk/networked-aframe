@@ -1,6 +1,7 @@
 /* global AFRAME, NAF, THREE */
 const flexbuffers = require('flatbuffers/js/flexbuffers');
 const { Reference } = require('flatbuffers/js/flexbuffers/reference');
+const { ByteBuffer } = require('flatbuffers/js/byte-buffer');
 const { Builder } = require('flatbuffers/js/builder');
 const { fromByteWidth } = require('flatbuffers/js/flexbuffers/bit-width-util');
 const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet } = require('../FlexBufferUtils');
@@ -18,10 +19,25 @@ const FBMessage = require('../schema/networked-aframe/message').Message;
 const FBFullUpdateData = require('../schema/networked-aframe/full-update-data').FullUpdateData;
 const FBUpdateOp = require('../schema/networked-aframe/update-op').UpdateOp;
 const FBDeleteOp = require('../schema/networked-aframe/delete-op').DeleteOp;
+const FBCustomOp = require('../schema/networked-aframe/custom-op').CustomOp;
 
 const uuidByteBuf = [];
 const opOffsetBuf = [];
 const fullUpdateDataRef = new FBFullUpdateData();
+const messageRef = new FBMessage();
+const updateRef = new FBUpdateOp();
+const deleteRef = new FBDeleteOp();
+const customRef = new FBCustomOp();
+
+const base64ToUint8Array = (base64) => {
+    var binary_string = window.atob(base64);
+    var len = binary_string.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes;
+};
 
 function uuidParse(uuid, arr) {
   arr.length = 16;
@@ -109,6 +125,13 @@ AFRAME.registerSystem("networked", {
   init() {
     // An array of "networked" component instances.
     this.components = [];
+
+    // Incoming messages and flag to determine if incoming message processing should pause
+    this.incomingData = [];
+    this.incomingSources = [];
+    this.incomingSenders = [];
+    this.incomingPaused = false;
+
     this.nextSyncTime = 0;
   },
 
@@ -124,90 +147,158 @@ AFRAME.registerSystem("networked", {
     }
   },
 
-  tick: (function() {
+  enqueueIncoming(data, source, sender) {
+    this.incomingData.push(data);
+    this.incomingSources.push(source);
+    this.incomingSenders.push(sender);
+  },
 
+  tick: (function() {
     return function() {
       if (!NAF.connection.adapter) return;
+      if (!this.incomingPaused) this.performReceiveStep();
+
       if (this.el.clock.elapsedTime < this.nextSyncTime) return;
-
-      let send = false;
-      let sendGuaranteed = false;
-
-      for (let i = 0, l = this.components.length; i < l; i++) {
-        const c = this.components[i];
-        if (!c.isMine()) continue;
-        if (!c.canSync()) continue;
-        if (!c.el.parentElement) {
-          NAF.log.error("entity registered with system despite being removed");
-          //TODO: Find out why tick is still being called
-          continue;
-        }
-
-        let isFull = false;
-
-        if (c.pendingFullSync) {
-          isFull = true;
-          c.pendingFullSync = false;
-        }
-
-        resetFlexBuilder();
-
-        if (!c.pushComponentsDataToFlexBuilder(isFull)) continue;
-
-        if (!send) {
-          flatbuilder.clear();
-          opOffsetBuf.length = 0;
-          send = true;
-        }
-
-        const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
-        const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(c.data.owner, uuidByteBuf));
-
-        let fullUpdateDataOffset = null;
-
-        if (isFull) {
-          sendGuaranteed = true;
-
-          fullUpdateDataOffset = FBFullUpdateData.createFullUpdateData(flatbuilder,
-             FBFullUpdateData.createCreatorVector(flatbuilder, uuidParse(c.data.creator, uuidByteBuf)),
-             flatbuilder.createSharedString(c.data.template),
-             c.data.persistent,
-             flatbuilder.createSharedString(c.getParentId())
-           );
-        }
-
-        const networkIdOffset = flatbuilder.createSharedString(c.data.networkId);
-        FBUpdateOp.startUpdateOp(flatbuilder); 
-        FBUpdateOp.addNetworkId(flatbuilder, networkIdOffset);
-        FBUpdateOp.addOwner(flatbuilder, ownerOffset)
-        FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME)
-        FBUpdateOp.addComponents(flatbuilder, componentsOffset);
-
-        if (fullUpdateDataOffset !== null) {
-          FBUpdateOp.addFullUpdateData(flatbuilder, fullUpdateDataOffset);
-        }
-
-        opOffsetBuf.push(FBUpdateOp.endUpdateOp(flatbuilder));
-      }
-
-      if (send) {
-        const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf);
-        FBMessage.startMessage(flatbuilder);
-        FBMessage.addUpdates(flatbuilder, updatesOffset);
-        const messageOffset = FBMessage.endMessage(flatbuilder);
-
-        flatbuilder.finish(messageOffset);
-
-        if (sendGuaranteed) {
-          NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
-        } else {
-          NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
-        }
-      }
- 
-      this.updateNextSyncTime();
+      this.performSendStep();
     };
   })(),
+
+  performReceiveStep() {
+    const { incomingData, incomingSources, incomingSenders } = this;
+
+    outer:
+    for (let i = 0, l = incomingData.length; i < l; i++) {
+      const data = incomingData.shift();
+      const source = incomingSources.shift();
+      const sender = incomingSenders.shift();
+
+      let createdEntity = false;
+
+      FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
+
+      for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
+        messageRef.updates(i, updateRef);
+
+        const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
+
+        // If there is an entity that data was received for but it's not registered yet
+        // (persistent entities), re-queue so we will keep trying to process the update
+        // until it shows up.
+        if (
+          isFullSync && fullUpdateDataRef.persistent() &&
+          !NAF.entities.hasEntity(updateRef.networkId())) {
+          incomingData.push(data);
+          incomingSources.push(source);
+          incomingSenders.push(sender);
+          continue outer;
+        }
+      }
+
+      for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
+        messageRef.updates(i, updateRef);
+
+        if (NAF.entities.updateEntity(updateRef, source, sender)) {
+          createdEntity = true;
+        }
+      }
+
+      for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
+        messageRef.deletes(i, deleteRef);
+        NAF.entities.removeRemoteEntity(deleteRef, source, sender);
+      }
+
+      for (let i = 0, l = messageRef.customsLength(); i < l; i++) {
+        messageRef.customs(i, customRef);
+        const dataType = customRef.dataType();
+
+        if (NAF.connection.dataChannelSubs[dataType]) {
+          NAF.connection.dataChannelSubs[dataType](dataType, JSON.parse(customRef.payload()));
+        }
+      }
+
+      // If we create an entity, wait a tick until processing next incoming message so entity spawns.
+      if (createdEntity) break;
+    }
+  },
+
+  performSendStep() {
+    let send = false;
+    let sendGuaranteed = false;
+
+    for (let i = 0, l = this.components.length; i < l; i++) {
+      const c = this.components[i];
+      if (!c.isMine()) continue;
+      if (!c.canSync()) continue;
+      if (!c.el.parentElement) {
+        NAF.log.error("entity registered with system despite being removed");
+        //TODO: Find out why tick is still being called
+        continue;
+      }
+
+      let isFull = false;
+
+      if (c.pendingFullSync) {
+        isFull = true;
+        c.pendingFullSync = false;
+      }
+
+      resetFlexBuilder();
+
+      if (!c.pushComponentsDataToFlexBuilder(isFull)) continue;
+
+      if (!send) {
+        flatbuilder.clear();
+        opOffsetBuf.length = 0;
+        send = true;
+      }
+
+      const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
+      const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(c.data.owner, uuidByteBuf));
+
+      let fullUpdateDataOffset = null;
+
+      if (isFull) {
+        sendGuaranteed = true;
+
+        fullUpdateDataOffset = FBFullUpdateData.createFullUpdateData(flatbuilder,
+           FBFullUpdateData.createCreatorVector(flatbuilder, uuidParse(c.data.creator, uuidByteBuf)),
+           flatbuilder.createSharedString(c.data.template),
+           c.data.persistent,
+           flatbuilder.createSharedString(c.getParentId())
+         );
+      }
+
+      const networkIdOffset = flatbuilder.createSharedString(c.data.networkId);
+      FBUpdateOp.startUpdateOp(flatbuilder); 
+      FBUpdateOp.addNetworkId(flatbuilder, networkIdOffset);
+      FBUpdateOp.addOwner(flatbuilder, ownerOffset)
+      FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME)
+      FBUpdateOp.addComponents(flatbuilder, componentsOffset);
+
+      if (fullUpdateDataOffset !== null) {
+        FBUpdateOp.addFullUpdateData(flatbuilder, fullUpdateDataOffset);
+      }
+
+      opOffsetBuf.push(FBUpdateOp.endUpdateOp(flatbuilder));
+    }
+
+    if (send) {
+      const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf);
+      FBMessage.startMessage(flatbuilder);
+      FBMessage.addUpdates(flatbuilder, updatesOffset);
+      const messageOffset = FBMessage.endMessage(flatbuilder);
+
+      flatbuilder.finish(messageOffset);
+
+      if (sendGuaranteed) {
+        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+      } else {
+        NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+      }
+    }
+
+    this.updateNextSyncTime();
+  },
 
   updateNextSyncTime() {
     this.nextSyncTime = this.el.clock.elapsedTime + 1 / NAF.options.updateRate;
