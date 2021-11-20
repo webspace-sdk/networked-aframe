@@ -76,8 +76,6 @@ class NetworkEntities {
 
     if (this.hasEntity(networkId)) {
       const entity = this.entities[networkId];
-      if (!NAF.connection.adapter.authorizeEntityManipulation(entity, sender)) return;
-
       entity.components.networked.networkUpdate(updateRef, sender);
     } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
       if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {

@@ -653,7 +653,12 @@ AFRAME.registerComponent('networked', {
 
       if (!OBJECT3D_COMPONENTS.includes(componentName)) {
         if (componentSchema.property) {
-          el.setAttribute(componentName, componentSchema.property, refGetToObject(componentDataRef, 1));
+          // Skip the property index which is always zero for this.
+          const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 2) };
+
+          if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+            el.setAttribute(componentName, attributeValue);
+          }
         } else {
           if (!aframeSchemaSortedKeys.has(componentName)) {
             const schema = AFRAME.components[componentName].schema;
@@ -684,50 +689,51 @@ AFRAME.registerComponent('networked', {
               }
             }
 
-            NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender);
-
-            el.setAttribute(componentName, attributeValue);
+            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+              el.setAttribute(componentName, attributeValue);
+            }
           }
         }
       } else {
-        const x = refGetNumeric(componentDataRef, 1);
-        const y = refGetNumeric(componentDataRef, 2);
-        const z = refGetNumeric(componentDataRef, 3);
+        if (NAF.connection.adapter.authorizeEntityManipulation(this.el, sender)) {
+          const x = refGetNumeric(componentDataRef, 1);
+          const y = refGetNumeric(componentDataRef, 2);
+          const z = refGetNumeric(componentDataRef, 3);
 
-        let lerper;
+          let lerper;
 
-        for (let i = 0, l = this.lerpers.length; i < l; i++) {
-          const info = this.lerpers[i];
+          for (let i = 0, l = this.lerpers.length; i < l; i++) {
+            const info = this.lerpers[i];
 
-          if (info.object3D === el.object3D) {
-            lerper = info.lerper;
-            break;
+            if (info.object3D === el.object3D) {
+              lerper = info.lerper;
+              break;
+            }
+          }
+
+          if (!lerper) {
+            lerper = new Lerper(NAF.options.updateRate, NAF.options.maxLerpDistance);
+            this.lerpers.push({ lerper, object3D: el.object3D });
+            lerper.startFrame();
+          }
+
+          switch(componentName) {
+            case 'position':
+              lerper.setPosition(x, y, z);
+              break;
+            case 'rotation':
+              this.conversionEuler.set(DEG2RAD * x, DEG2RAD * y, DEG2RAD * z);
+              tmpQuaternion.setFromEuler(this.conversionEuler)
+              lerper.setQuaternion(tmpQuaternion.x, tmpQuaternion.y, tmpQuaternion.z, tmpQuaternion.w);
+              break;
+            case 'scale':
+              lerper.setScale(x, y, z);
+              break;
+            default:
+          NAF.log.error('Could not set value in interpolation buffer.', el, componentName, x, y, z);
+              break;
           }
         }
-
-        if (!lerper) {
-          lerper = new Lerper(NAF.options.updateRate, NAF.options.maxLerpDistance);
-          this.lerpers.push({ lerper, object3D: el.object3D });
-          lerper.startFrame();
-        }
-
-        switch(componentName) {
-          case 'position':
-            lerper.setPosition(x, y, z);
-            break;
-          case 'rotation':
-            this.conversionEuler.set(DEG2RAD * x, DEG2RAD * y, DEG2RAD * z);
-            tmpQuaternion.setFromEuler(this.conversionEuler)
-            lerper.setQuaternion(tmpQuaternion.x, tmpQuaternion.y, tmpQuaternion.z, tmpQuaternion.w);
-            break;
-          case 'scale':
-            lerper.setScale(x, y, z);
-            break;
-          default:
-        NAF.log.error('Could not set value in interpolation buffer.', el, componentName, x, y, z);
-            break;
-        }
-
       }
     }
   },
