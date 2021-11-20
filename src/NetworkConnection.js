@@ -245,7 +245,7 @@ class NetworkConnection {
   }
 
   // Returns true if a new entity was created
-  receivedData(data, source) {
+  receivedData(data, source, sender) {
     let createdEntity = false;
 
     FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
@@ -253,14 +253,14 @@ class NetworkConnection {
     for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
       messageRef.updates(i, updateRef);
 
-      if (this.entities.updateEntity(updateRef, source)) {
+      if (this.entities.updateEntity(updateRef, source, sender)) {
         createdEntity = true;
       }
     }
 
     for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
       messageRef.deletes(i, deleteRef);
-      this.entities.removeRemoteEntity(deleteRef, source);
+      this.entities.removeRemoteEntity(deleteRef, source, sender);
     }
 
     for (let i = 0, l = messageRef.customsLength(); i < l; i++) {

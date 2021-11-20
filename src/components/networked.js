@@ -349,17 +349,17 @@ AFRAME.registerComponent('networked', {
   },
 
   applyPersistentFirstSync: function() {
-    const { networkId } = this.data;
+    const { networkId, creator } = this.data;
     const persistentUpdateRef = NAF.entities.getPersistentFirstSync(networkId);
     if (persistentUpdateRef) {
       // Can presume offset zero for first full sync
-      this.networkUpdate(persistentUpdateRef);
+      this.networkUpdate(persistentUpdateRef, creator);
       NAF.entities.forgetPersistentFirstSync(networkId);
     }
   },
 
   firstUpdate: function() {
-    this.networkUpdate(this.el.firstUpdateRef, true);
+    this.networkUpdate(this.el.firstUpdateRef, this.data.creator);
   },
 
   onConnected: function() {
@@ -519,6 +519,8 @@ AFRAME.registerComponent('networked', {
               }
             }
           } else {
+            flexbuilder.addInt(0);
+
             const value = dataToSync;
 
             if (typeof value === "object") {
@@ -582,7 +584,8 @@ AFRAME.registerComponent('networked', {
 
   /* Receiving updates */
 
-  networkUpdate: function(updateRef) {
+  networkUpdate: function(updateRef, sender) {
+
     uuidByteBuf.length = 16;
     for (let i = 0; i < 16; i++) {
       uuidByteBuf[i] = updateRef.owner(i);
@@ -628,10 +631,10 @@ AFRAME.registerComponent('networked', {
     const parentWidth = fromByteWidth(byteWidth);
     const offset = len - byteWidth - 2;
     const entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
-    this.updateNetworkedComponents(entityDataRef, isFullSync);
+    this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
   },
 
-  updateNetworkedComponents: function(entityDataRef, isFullSync) {
+  updateNetworkedComponents: function(entityDataRef, isFullSync, sender) {
     this.startLerpingFrame();
 
     const len = entityDataRef.length();
@@ -653,21 +656,35 @@ AFRAME.registerComponent('networked', {
           el.setAttribute(componentName, componentSchema.property, refGetToObject(componentDataRef, 1));
         } else {
           if (!aframeSchemaSortedKeys.has(componentName)) {
-            aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
+            const schema = AFRAME.components[componentName].schema;
+
+            if (schema.default) {
+              aframeSchemaSortedKeys.set(componentName, [].sort());
+            } else {
+              aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
+            }
           }
 
           const componentDataLength = componentDataRef.length();
 
           if (componentDataLength > 1) {
-            const attributeValue = {};
+            let attributeValue = {};
             const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
             for (let j = 1; j < componentDataLength; j += 2) {
               const key = refGetInt(componentDataRef, j);
               const value = refGetToObject(componentDataRef, j + 1);
 
-              attributeValue[aframeSchemaKeys[key]] = value;
+              if (aframeSchemaKeys.length === 0) {
+                // default value case
+                attributeValue = value;
+                break;
+              } else {
+                attributeValue[aframeSchemaKeys[key]] = value;
+              }
             }
+
+            NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender);
 
             el.setAttribute(componentName, attributeValue);
           }

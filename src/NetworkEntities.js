@@ -62,7 +62,7 @@ class NetworkEntities {
   }
 
   // Returns true if a new entity was created.
-  updateEntity(updateRef, source) {
+  updateEntity(updateRef, source, sender) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return false;
 
     const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
@@ -75,21 +75,26 @@ class NetworkEntities {
     const owner = uuid.stringify(uuidByteBuf);
 
     if (this.hasEntity(networkId)) {
-      this.entities[networkId].components.networked.networkUpdate(updateRef);
+      const entity = this.entities[networkId];
+      if (!NAF.connection.adapter.authorizeEntityManipulation(entity, sender)) return;
+
+      entity.components.networked.networkUpdate(updateRef, sender);
     } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
       if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
         NAF.log.write('Ignoring first sync from disallowed source', source);
       } else {
-        if (fullUpdateDataRef.persistent()) {
-          // If we receive a firstSync for a persistent entity that we don't have yet,
-          // we assume the scene will create it at some point, so stash the update for later use.
-          // Make a copy since above we were using tempRef
-          this._persistentFirstSyncs[networkId] = updateRef;
-        } else {
-          this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
-        }
+        if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
+          if (fullUpdateDataRef.persistent()) {
+            // If we receive a firstSync for a persistent entity that we don't have yet,
+            // we assume the scene will create it at some point, so stash the update for later use.
+            // Make a copy since above we were using tempRef
+            this._persistentFirstSyncs[networkId] = updateRef;
+          } else {
+            this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
+          }
 
-        return true;
+          return true;
+        }
       }
     }
   }
@@ -153,9 +158,13 @@ class NetworkEntities {
     }
   }
 
-  removeRemoteEntity(deleteRef, source) {
+  removeRemoteEntity(deleteRef, source, sender) {
     if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
+
     const networkId = deleteRef.networkId();
+    const entity = this.entities[networkId];
+
+    if (!NAF.connection.adapter.authorizeEntityManipulation(entity, sender)) return;
     return this.removeEntity(networkId);
   }
 
