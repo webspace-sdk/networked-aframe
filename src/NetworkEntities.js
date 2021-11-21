@@ -33,8 +33,6 @@ class NetworkEntities {
 
     this.addNetworkComponent(el, updateRef);
 
-    this.registerEntity(networkId, el);
-
     return el;
   }
 
@@ -56,14 +54,12 @@ class NetworkEntities {
     const template = fullUpdateData.template();
     const persistent = fullUpdateData.persistent();
 
-    entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
-
     entity.firstUpdateRef = updateRef;
+    entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
   }
 
-  // Returns true if a new entity was created.
   updateEntity(updateRef, source, sender) {
-    if (NAF.options.syncSource && source !== NAF.options.syncSource) return false;
+    if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
 
     const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
     const networkId = updateRef.networkId();
@@ -80,19 +76,11 @@ class NetworkEntities {
     } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
       if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
         NAF.log.write('Ignoring first sync from disallowed source', source);
-      } else {
-        if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
-          if (fullUpdateDataRef.persistent()) {
-            // If we receive a firstSync for a persistent entity that we don't have yet,
-            // we assume the scene will create it at some point, so stash the update for later use.
-            // Make a copy since above we were using tempRef
-            this._persistentFirstSyncs[networkId] = updateRef;
-          } else {
-            this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
-          }
+        return;
+      }
 
-          return true;
-        }
+      if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
+        this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
       }
     }
   }
@@ -162,6 +150,8 @@ class NetworkEntities {
     const networkId = deleteRef.networkId();
     const entity = this.entities[networkId];
 
+    if (!entity) return;
+
     if (!NAF.connection.adapter.authorizeEntityManipulation(entity, sender)) return;
     return this.removeEntity(networkId);
   }
@@ -186,53 +176,42 @@ class NetworkEntities {
   }
 
   removeEntity(id) {
-    this.forgetPersistentFirstSync(id);
-
-    if (this.hasEntity(id)) {
-      var entity = this.entities[id];
-
-      // Remove elements from the bottom up, so A-frame detached them appropriately
-      const walk = (n) => {
-        const children = n.children;
-
-        for (let i = 0; i < children.length; i++) {
-          walk(children[i]);
-        }
-
-        if (n.parentNode) {
-          n.parentNode.removeChild(n);
-        }
-      };
-
-      walk(entity);
-
-      return entity;
-    } else {
+    if (!this.hasEntity(id)) {
       NAF.log.error("Tried to remove entity I don't have.");
       return null;
     }
+
+    const entity = this.entities[id];
+
+    // Remove elements from the bottom up, so A-frame detached them appropriately
+    const walk = (n) => {
+      const children = n.children;
+
+      for (let i = 0; i < children.length; i++) {
+        walk(children[i]);
+      }
+
+      if (n.parentNode) {
+        n.parentNode.removeChild(n);
+      }
+    };
+
+    walk(entity);
+
+    return entity;
   }
 
   forgetEntity(id){
     delete this.entities[id];
-    this.forgetPersistentFirstSync(id);
-  }
-
-  getPersistentFirstSync(id){
-    return this._persistentFirstSyncs[id];
-  }
-
-  forgetPersistentFirstSync(id){
-    delete this._persistentFirstSyncs[id];
   }
 
   getEntity(id) {
-    if (this.entities.hasOwnProperty(id)) {
-      return this.entities[id];
-    }
-    return null;
+    if (!this.hasEntity(id)) return null;
+    return this.entities[id];
   }
 
+  // Returns true if an entity with the given network id has been registered,
+  // which means it is valid and its networked component has been initialized.
   hasEntity(id) {
     return this.entities.hasOwnProperty(id);
   }

@@ -132,6 +132,10 @@ AFRAME.registerSystem("networked", {
     this.incomingSenders = [];
     this.incomingPaused = false;
 
+    // Set of network ids that had a full sync but have not yet shown up in the set of
+    // entities. This avoids processing any messages until it has been instantiated.
+    this.instantiatingNetworkIds = new Set();
+
     this.nextSyncTime = 0;
   },
 
@@ -172,34 +176,48 @@ AFRAME.registerSystem("networked", {
       const source = incomingSources.shift();
       const sender = incomingSenders.shift();
 
-      let createdEntity = false;
-
       FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
 
       for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
         messageRef.updates(i, updateRef);
 
+        const networkId = updateRef.networkId();
+        const hasInstantiatedEntity = NAF.entities.hasEntity(networkId);
         const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
 
-        // If there is an entity that data was received for but it's not registered yet
-        // (persistent entities), re-queue so we will keep trying to process the update
-        // until it shows up.
-        if (
-          isFullSync && fullUpdateDataRef.persistent() &&
-          !NAF.entities.hasEntity(updateRef.networkId())) {
-          incomingData.push(data);
-          incomingSources.push(source);
-          incomingSenders.push(sender);
-          continue outer;
+        if (hasInstantiatedEntity) {
+          if (this.instantiatingNetworkIds.size > 0 && this.instantiatingNetworkIds.has(networkId)) {
+            this.instantiatingNetworkIds.delete(networkId);
+          }
+        } else {
+          // Possibly re-queue messages for missing entities
+          // For persistent missing entities, requeue all messages since scene creates it.
+          if (isFullSync && fullUpdateDataRef.persistent()) {
+            incomingData.push(data);
+            incomingSources.push(source);
+            incomingSenders.push(sender);
+            continue outer;
+          } else {
+            // Let through the first full sync for a new, non-persistent entity
+            const isFirstFullSync = isFullSync && !this.instantiatingNetworkIds.has(networkId);
+
+            if (isFirstFullSync) {
+              // Mark entity as instantiating so we don't consume subsequent first syncs.
+              this.instantiatingNetworkIds.add(networkId);
+            } else {
+              // Otherwise re-queue
+              incomingData.push(data);
+              incomingSources.push(source);
+              incomingSenders.push(sender);
+              continue outer;
+            }
+          }
         }
       }
 
       for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
         messageRef.updates(i, updateRef);
-
-        if (NAF.entities.updateEntity(updateRef, source, sender)) {
-          createdEntity = true;
-        }
+        NAF.entities.updateEntity(updateRef, source, sender)
       }
 
       for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
@@ -215,9 +233,6 @@ AFRAME.registerSystem("networked", {
           NAF.connection.dataChannelSubs[dataType](dataType, JSON.parse(customRef.payload()));
         }
       }
-
-      // If we create an entity, wait a tick until processing next incoming message so entity spawns.
-      if (createdEntity) break;
     }
   },
 
@@ -368,9 +383,9 @@ AFRAME.registerComponent('networked', {
       if (this.data.attachTemplateToLocal) {
         this.attachTemplateToLocal();
       }
-
-      this.registerEntity(this.data.networkId);
     }
+
+    NAF.entities.registerEntity(networkId, this.el);
 
     this.lastOwnerTime = 1;
 
@@ -432,20 +447,6 @@ AFRAME.registerComponent('networked', {
       this.parent = parentEl;
     } else {
       this.parent = null;
-    }
-  },
-
-  registerEntity: function(networkId) {
-    NAF.entities.registerEntity(networkId, this.el);
-  },
-
-  applyPersistentFirstSync: function() {
-    const { networkId, creator } = this.data;
-    const persistentUpdateRef = NAF.entities.getPersistentFirstSync(networkId);
-    if (persistentUpdateRef) {
-      // Can presume offset zero for first full sync
-      this.networkUpdate(persistentUpdateRef, creator);
-      NAF.entities.forgetPersistentFirstSync(networkId);
     }
   },
 
