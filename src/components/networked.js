@@ -178,6 +178,7 @@ AFRAME.registerSystem("networked", {
 
       FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
 
+      // Do a pass over the updates first to determine if this message should be skipped + requeued
       for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
         messageRef.updates(i, updateRef);
 
