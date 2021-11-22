@@ -65,7 +65,7 @@
 	var NafLogger = __webpack_require__(4);
 	var Schemas = __webpack_require__(5);
 	var NetworkEntities = __webpack_require__(6);
-	var NetworkConnection = __webpack_require__(31);
+	var NetworkConnection = __webpack_require__(32);
 	var AdapterFactory = __webpack_require__(36);
 
 	var naf = {};
@@ -410,6 +410,7 @@
 	var ChildEntityCache = __webpack_require__(7);
 	var uuid = __webpack_require__(8);
 	var FBFullUpdateData = __webpack_require__(23).FullUpdateData;
+	var FBUpdateOp = __webpack_require__(31).UpdateOp;
 
 	var fullUpdateDataRef = new FBFullUpdateData();
 	var uuidByteBuf = [];
@@ -445,8 +446,6 @@
 
 	      this.addNetworkComponent(el, updateRef);
 
-	      this.registerEntity(networkId, el);
-
 	      return el;
 	    }
 	  }, {
@@ -469,9 +468,12 @@
 	      var template = fullUpdateData.template();
 	      var persistent = fullUpdateData.persistent();
 
-	      entity.setAttribute('networked', { template: template, owner: owner, creator: creator, networkId: networkId, persistent: persistent });
+	      // Clone update ref, since reference will be re-used
+	      entity.firstUpdateRef = new FBUpdateOp();
+	      entity.firstUpdateRef.bb = updateRef.bb;
+	      entity.firstUpdateRef.bb_pos = updateRef.bb_pos;
 
-	      entity.firstUpdateRef = updateRef;
+	      entity.setAttribute('networked', { template: template, owner: owner, creator: creator, networkId: networkId, persistent: persistent });
 	    }
 	  }, {
 	    key: 'updateEntity',
@@ -493,17 +495,11 @@
 	      } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
 	        if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
 	          NAF.log.write('Ignoring first sync from disallowed source', source);
-	        } else {
-	          if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
-	            if (fullUpdateDataRef.persistent()) {
-	              // If we receive a firstSync for a persistent entity that we don't have yet,
-	              // we assume the scene will create it at some point, so stash the update for later use.
-	              // Make a copy since above we were using tempRef
-	              this._persistentFirstSyncs[networkId] = updateRef;
-	            } else {
-	              this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
-	            }
-	          }
+	          return;
+	        }
+
+	        if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
+	          this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
 	        }
 	      }
 	    }
@@ -603,56 +599,45 @@
 	  }, {
 	    key: 'removeEntity',
 	    value: function removeEntity(id) {
-	      this.forgetPersistentFirstSync(id);
-
-	      if (this.hasEntity(id)) {
-	        var entity = this.entities[id];
-
-	        // Remove elements from the bottom up, so A-frame detached them appropriately
-	        var walk = function walk(n) {
-	          var children = n.children;
-
-	          for (var i = 0; i < children.length; i++) {
-	            walk(children[i]);
-	          }
-
-	          if (n.parentNode) {
-	            n.parentNode.removeChild(n);
-	          }
-	        };
-
-	        walk(entity);
-
-	        return entity;
-	      } else {
+	      if (!this.hasEntity(id)) {
 	        NAF.log.error("Tried to remove entity I don't have.");
 	        return null;
 	      }
+
+	      var entity = this.entities[id];
+
+	      // Remove elements from the bottom up, so A-frame detached them appropriately
+	      var walk = function walk(n) {
+	        var children = n.children;
+
+	        for (var i = 0; i < children.length; i++) {
+	          walk(children[i]);
+	        }
+
+	        if (n.parentNode) {
+	          n.parentNode.removeChild(n);
+	        }
+	      };
+
+	      walk(entity);
+
+	      return entity;
 	    }
 	  }, {
 	    key: 'forgetEntity',
 	    value: function forgetEntity(id) {
 	      delete this.entities[id];
-	      this.forgetPersistentFirstSync(id);
-	    }
-	  }, {
-	    key: 'getPersistentFirstSync',
-	    value: function getPersistentFirstSync(id) {
-	      return this._persistentFirstSyncs[id];
-	    }
-	  }, {
-	    key: 'forgetPersistentFirstSync',
-	    value: function forgetPersistentFirstSync(id) {
-	      delete this._persistentFirstSyncs[id];
 	    }
 	  }, {
 	    key: 'getEntity',
 	    value: function getEntity(id) {
-	      if (this.entities.hasOwnProperty(id)) {
-	        return this.entities[id];
-	      }
-	      return null;
+	      if (!this.hasEntity(id)) return null;
+	      return this.entities[id];
 	    }
+
+	    // Returns true if an entity with the given network id has been registered,
+	    // which means it is valid and its networked component has been initialized.
+
 	  }, {
 	    key: 'hasEntity',
 	    value: function hasEntity(id) {
@@ -2769,6 +2754,167 @@
 /* 31 */
 /***/ (function(module, exports, __webpack_require__) {
 
+	"use strict";
+	// automatically generated by the FlatBuffers compiler, do not modify
+
+	exports.__esModule = true;
+	exports.UpdateOpT = exports.UpdateOp = void 0;
+	var flatbuffers = __webpack_require__(24);
+	var full_update_data_1 = __webpack_require__(23);
+	var UpdateOp = /** @class */function () {
+	    function UpdateOp() {
+	        this.bb = null;
+	        this.bb_pos = 0;
+	    }
+	    UpdateOp.prototype.__init = function (i, bb) {
+	        this.bb_pos = i;
+	        this.bb = bb;
+	        return this;
+	    };
+	    UpdateOp.getRootAsUpdateOp = function (bb, obj) {
+	        return (obj || new UpdateOp()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
+	    };
+	    UpdateOp.getSizePrefixedRootAsUpdateOp = function (bb, obj) {
+	        bb.setPosition(bb.position() + flatbuffers.SIZE_PREFIX_LENGTH);
+	        return (obj || new UpdateOp()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
+	    };
+	    UpdateOp.prototype.networkId = function (optionalEncoding) {
+	        var offset = this.bb.__offset(this.bb_pos, 4);
+	        return offset ? this.bb.__string(this.bb_pos + offset, optionalEncoding) : null;
+	    };
+	    UpdateOp.prototype.fullUpdateData = function (obj) {
+	        var offset = this.bb.__offset(this.bb_pos, 6);
+	        return offset ? (obj || new full_update_data_1.FullUpdateData()).__init(this.bb.__indirect(this.bb_pos + offset), this.bb) : null;
+	    };
+	    UpdateOp.prototype.owner = function (index) {
+	        var offset = this.bb.__offset(this.bb_pos, 8);
+	        return offset ? this.bb.readUint8(this.bb.__vector(this.bb_pos + offset) + index) : 0;
+	    };
+	    UpdateOp.prototype.ownerLength = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 8);
+	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
+	    };
+	    UpdateOp.prototype.ownerArray = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 8);
+	        return offset ? new Uint8Array(this.bb.bytes().buffer, this.bb.bytes().byteOffset + this.bb.__vector(this.bb_pos + offset), this.bb.__vector_len(this.bb_pos + offset)) : null;
+	    };
+	    UpdateOp.prototype.lastOwnerTime = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 10);
+	        return offset ? this.bb.readUint32(this.bb_pos + offset) : 0;
+	    };
+	    UpdateOp.prototype.components = function (index) {
+	        var offset = this.bb.__offset(this.bb_pos, 12);
+	        return offset ? this.bb.readUint8(this.bb.__vector(this.bb_pos + offset) + index) : 0;
+	    };
+	    UpdateOp.prototype.componentsLength = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 12);
+	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
+	    };
+	    UpdateOp.prototype.componentsArray = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 12);
+	        return offset ? new Uint8Array(this.bb.bytes().buffer, this.bb.bytes().byteOffset + this.bb.__vector(this.bb_pos + offset), this.bb.__vector_len(this.bb_pos + offset)) : null;
+	    };
+	    UpdateOp.startUpdateOp = function (builder) {
+	        builder.startObject(5);
+	    };
+	    UpdateOp.addNetworkId = function (builder, networkIdOffset) {
+	        builder.addFieldOffset(0, networkIdOffset, 0);
+	    };
+	    UpdateOp.addFullUpdateData = function (builder, fullUpdateDataOffset) {
+	        builder.addFieldOffset(1, fullUpdateDataOffset, 0);
+	    };
+	    UpdateOp.addOwner = function (builder, ownerOffset) {
+	        builder.addFieldOffset(2, ownerOffset, 0);
+	    };
+	    UpdateOp.createOwnerVector = function (builder, data) {
+	        builder.startVector(1, data.length, 1);
+	        for (var i = data.length - 1; i >= 0; i--) {
+	            builder.addInt8(data[i]);
+	        }
+	        return builder.endVector();
+	    };
+	    UpdateOp.startOwnerVector = function (builder, numElems) {
+	        builder.startVector(1, numElems, 1);
+	    };
+	    UpdateOp.addLastOwnerTime = function (builder, lastOwnerTime) {
+	        builder.addFieldInt32(3, lastOwnerTime, 0);
+	    };
+	    UpdateOp.addComponents = function (builder, componentsOffset) {
+	        builder.addFieldOffset(4, componentsOffset, 0);
+	    };
+	    UpdateOp.createComponentsVector = function (builder, data) {
+	        builder.startVector(1, data.length, 1);
+	        for (var i = data.length - 1; i >= 0; i--) {
+	            builder.addInt8(data[i]);
+	        }
+	        return builder.endVector();
+	    };
+	    UpdateOp.startComponentsVector = function (builder, numElems) {
+	        builder.startVector(1, numElems, 1);
+	    };
+	    UpdateOp.endUpdateOp = function (builder) {
+	        var offset = builder.endObject();
+	        builder.requiredField(offset, 4); // network_id
+	        builder.requiredField(offset, 12); // components
+	        return offset;
+	    };
+	    UpdateOp.prototype.unpack = function () {
+	        return new UpdateOpT(this.networkId(), this.fullUpdateData() !== null ? this.fullUpdateData().unpack() : null, this.bb.createScalarList(this.owner.bind(this), this.ownerLength()), this.lastOwnerTime(), this.bb.createScalarList(this.components.bind(this), this.componentsLength()));
+	    };
+	    UpdateOp.prototype.unpackTo = function (_o) {
+	        _o.networkId = this.networkId();
+	        _o.fullUpdateData = this.fullUpdateData() !== null ? this.fullUpdateData().unpack() : null;
+	        _o.owner = this.bb.createScalarList(this.owner.bind(this), this.ownerLength());
+	        _o.lastOwnerTime = this.lastOwnerTime();
+	        _o.components = this.bb.createScalarList(this.components.bind(this), this.componentsLength());
+	    };
+	    return UpdateOp;
+	}();
+	exports.UpdateOp = UpdateOp;
+	var UpdateOpT = /** @class */function () {
+	    function UpdateOpT(networkId, fullUpdateData, owner, lastOwnerTime, components) {
+	        if (networkId === void 0) {
+	            networkId = null;
+	        }
+	        if (fullUpdateData === void 0) {
+	            fullUpdateData = null;
+	        }
+	        if (owner === void 0) {
+	            owner = [];
+	        }
+	        if (lastOwnerTime === void 0) {
+	            lastOwnerTime = 0;
+	        }
+	        if (components === void 0) {
+	            components = [];
+	        }
+	        this.networkId = networkId;
+	        this.fullUpdateData = fullUpdateData;
+	        this.owner = owner;
+	        this.lastOwnerTime = lastOwnerTime;
+	        this.components = components;
+	    }
+	    UpdateOpT.prototype.pack = function (builder) {
+	        var networkId = this.networkId !== null ? builder.createString(this.networkId) : 0;
+	        var fullUpdateData = this.fullUpdateData !== null ? this.fullUpdateData.pack(builder) : 0;
+	        var owner = UpdateOp.createOwnerVector(builder, this.owner);
+	        var components = UpdateOp.createComponentsVector(builder, this.components);
+	        UpdateOp.startUpdateOp(builder);
+	        UpdateOp.addNetworkId(builder, networkId);
+	        UpdateOp.addFullUpdateData(builder, fullUpdateData);
+	        UpdateOp.addOwner(builder, owner);
+	        UpdateOp.addLastOwnerTime(builder, this.lastOwnerTime);
+	        UpdateOp.addComponents(builder, components);
+	        return UpdateOp.endUpdateOp(builder);
+	    };
+	    return UpdateOpT;
+	}();
+	exports.UpdateOpT = UpdateOpT;
+
+/***/ }),
+/* 32 */
+/***/ (function(module, exports, __webpack_require__) {
+
 	'use strict';
 
 	var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
@@ -2785,8 +2931,8 @@
 	// Flatbuffers builder
 	var flatbuilder = new Builder(1024);
 
-	var FBMessage = __webpack_require__(32).Message;
-	var FBCustomOp = __webpack_require__(33).CustomOp;
+	var FBMessage = __webpack_require__(33).Message;
+	var FBCustomOp = __webpack_require__(34).CustomOp;
 
 	var typedArrayToBase64 = function typedArrayToBase64(bytes) {
 	  var binary = '';
@@ -3064,7 +3210,7 @@
 	module.exports = NetworkConnection;
 
 /***/ }),
-/* 32 */
+/* 33 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -3073,9 +3219,9 @@
 	exports.__esModule = true;
 	exports.MessageT = exports.Message = void 0;
 	var flatbuffers = __webpack_require__(24);
-	var custom_op_1 = __webpack_require__(33);
-	var delete_op_1 = __webpack_require__(34);
-	var update_op_1 = __webpack_require__(35);
+	var custom_op_1 = __webpack_require__(34);
+	var delete_op_1 = __webpack_require__(35);
+	var update_op_1 = __webpack_require__(31);
 	var Message = /** @class */function () {
 	    function Message() {
 	        this.bb = null;
@@ -3213,7 +3359,7 @@
 	exports.MessageT = MessageT;
 
 /***/ }),
-/* 33 */
+/* 34 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -3299,7 +3445,7 @@
 	exports.CustomOpT = CustomOpT;
 
 /***/ }),
-/* 34 */
+/* 35 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -3368,167 +3514,6 @@
 	    return DeleteOpT;
 	}();
 	exports.DeleteOpT = DeleteOpT;
-
-/***/ }),
-/* 35 */
-/***/ (function(module, exports, __webpack_require__) {
-
-	"use strict";
-	// automatically generated by the FlatBuffers compiler, do not modify
-
-	exports.__esModule = true;
-	exports.UpdateOpT = exports.UpdateOp = void 0;
-	var flatbuffers = __webpack_require__(24);
-	var full_update_data_1 = __webpack_require__(23);
-	var UpdateOp = /** @class */function () {
-	    function UpdateOp() {
-	        this.bb = null;
-	        this.bb_pos = 0;
-	    }
-	    UpdateOp.prototype.__init = function (i, bb) {
-	        this.bb_pos = i;
-	        this.bb = bb;
-	        return this;
-	    };
-	    UpdateOp.getRootAsUpdateOp = function (bb, obj) {
-	        return (obj || new UpdateOp()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
-	    };
-	    UpdateOp.getSizePrefixedRootAsUpdateOp = function (bb, obj) {
-	        bb.setPosition(bb.position() + flatbuffers.SIZE_PREFIX_LENGTH);
-	        return (obj || new UpdateOp()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
-	    };
-	    UpdateOp.prototype.networkId = function (optionalEncoding) {
-	        var offset = this.bb.__offset(this.bb_pos, 4);
-	        return offset ? this.bb.__string(this.bb_pos + offset, optionalEncoding) : null;
-	    };
-	    UpdateOp.prototype.fullUpdateData = function (obj) {
-	        var offset = this.bb.__offset(this.bb_pos, 6);
-	        return offset ? (obj || new full_update_data_1.FullUpdateData()).__init(this.bb.__indirect(this.bb_pos + offset), this.bb) : null;
-	    };
-	    UpdateOp.prototype.owner = function (index) {
-	        var offset = this.bb.__offset(this.bb_pos, 8);
-	        return offset ? this.bb.readUint8(this.bb.__vector(this.bb_pos + offset) + index) : 0;
-	    };
-	    UpdateOp.prototype.ownerLength = function () {
-	        var offset = this.bb.__offset(this.bb_pos, 8);
-	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
-	    };
-	    UpdateOp.prototype.ownerArray = function () {
-	        var offset = this.bb.__offset(this.bb_pos, 8);
-	        return offset ? new Uint8Array(this.bb.bytes().buffer, this.bb.bytes().byteOffset + this.bb.__vector(this.bb_pos + offset), this.bb.__vector_len(this.bb_pos + offset)) : null;
-	    };
-	    UpdateOp.prototype.lastOwnerTime = function () {
-	        var offset = this.bb.__offset(this.bb_pos, 10);
-	        return offset ? this.bb.readUint32(this.bb_pos + offset) : 0;
-	    };
-	    UpdateOp.prototype.components = function (index) {
-	        var offset = this.bb.__offset(this.bb_pos, 12);
-	        return offset ? this.bb.readUint8(this.bb.__vector(this.bb_pos + offset) + index) : 0;
-	    };
-	    UpdateOp.prototype.componentsLength = function () {
-	        var offset = this.bb.__offset(this.bb_pos, 12);
-	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
-	    };
-	    UpdateOp.prototype.componentsArray = function () {
-	        var offset = this.bb.__offset(this.bb_pos, 12);
-	        return offset ? new Uint8Array(this.bb.bytes().buffer, this.bb.bytes().byteOffset + this.bb.__vector(this.bb_pos + offset), this.bb.__vector_len(this.bb_pos + offset)) : null;
-	    };
-	    UpdateOp.startUpdateOp = function (builder) {
-	        builder.startObject(5);
-	    };
-	    UpdateOp.addNetworkId = function (builder, networkIdOffset) {
-	        builder.addFieldOffset(0, networkIdOffset, 0);
-	    };
-	    UpdateOp.addFullUpdateData = function (builder, fullUpdateDataOffset) {
-	        builder.addFieldOffset(1, fullUpdateDataOffset, 0);
-	    };
-	    UpdateOp.addOwner = function (builder, ownerOffset) {
-	        builder.addFieldOffset(2, ownerOffset, 0);
-	    };
-	    UpdateOp.createOwnerVector = function (builder, data) {
-	        builder.startVector(1, data.length, 1);
-	        for (var i = data.length - 1; i >= 0; i--) {
-	            builder.addInt8(data[i]);
-	        }
-	        return builder.endVector();
-	    };
-	    UpdateOp.startOwnerVector = function (builder, numElems) {
-	        builder.startVector(1, numElems, 1);
-	    };
-	    UpdateOp.addLastOwnerTime = function (builder, lastOwnerTime) {
-	        builder.addFieldInt32(3, lastOwnerTime, 0);
-	    };
-	    UpdateOp.addComponents = function (builder, componentsOffset) {
-	        builder.addFieldOffset(4, componentsOffset, 0);
-	    };
-	    UpdateOp.createComponentsVector = function (builder, data) {
-	        builder.startVector(1, data.length, 1);
-	        for (var i = data.length - 1; i >= 0; i--) {
-	            builder.addInt8(data[i]);
-	        }
-	        return builder.endVector();
-	    };
-	    UpdateOp.startComponentsVector = function (builder, numElems) {
-	        builder.startVector(1, numElems, 1);
-	    };
-	    UpdateOp.endUpdateOp = function (builder) {
-	        var offset = builder.endObject();
-	        builder.requiredField(offset, 4); // network_id
-	        builder.requiredField(offset, 12); // components
-	        return offset;
-	    };
-	    UpdateOp.prototype.unpack = function () {
-	        return new UpdateOpT(this.networkId(), this.fullUpdateData() !== null ? this.fullUpdateData().unpack() : null, this.bb.createScalarList(this.owner.bind(this), this.ownerLength()), this.lastOwnerTime(), this.bb.createScalarList(this.components.bind(this), this.componentsLength()));
-	    };
-	    UpdateOp.prototype.unpackTo = function (_o) {
-	        _o.networkId = this.networkId();
-	        _o.fullUpdateData = this.fullUpdateData() !== null ? this.fullUpdateData().unpack() : null;
-	        _o.owner = this.bb.createScalarList(this.owner.bind(this), this.ownerLength());
-	        _o.lastOwnerTime = this.lastOwnerTime();
-	        _o.components = this.bb.createScalarList(this.components.bind(this), this.componentsLength());
-	    };
-	    return UpdateOp;
-	}();
-	exports.UpdateOp = UpdateOp;
-	var UpdateOpT = /** @class */function () {
-	    function UpdateOpT(networkId, fullUpdateData, owner, lastOwnerTime, components) {
-	        if (networkId === void 0) {
-	            networkId = null;
-	        }
-	        if (fullUpdateData === void 0) {
-	            fullUpdateData = null;
-	        }
-	        if (owner === void 0) {
-	            owner = [];
-	        }
-	        if (lastOwnerTime === void 0) {
-	            lastOwnerTime = 0;
-	        }
-	        if (components === void 0) {
-	            components = [];
-	        }
-	        this.networkId = networkId;
-	        this.fullUpdateData = fullUpdateData;
-	        this.owner = owner;
-	        this.lastOwnerTime = lastOwnerTime;
-	        this.components = components;
-	    }
-	    UpdateOpT.prototype.pack = function (builder) {
-	        var networkId = this.networkId !== null ? builder.createString(this.networkId) : 0;
-	        var fullUpdateData = this.fullUpdateData !== null ? this.fullUpdateData.pack(builder) : 0;
-	        var owner = UpdateOp.createOwnerVector(builder, this.owner);
-	        var components = UpdateOp.createComponentsVector(builder, this.components);
-	        UpdateOp.startUpdateOp(builder);
-	        UpdateOp.addNetworkId(builder, networkId);
-	        UpdateOp.addFullUpdateData(builder, fullUpdateData);
-	        UpdateOp.addOwner(builder, owner);
-	        UpdateOp.addLastOwnerTime(builder, this.lastOwnerTime);
-	        UpdateOp.addComponents(builder, components);
-	        return UpdateOp.endUpdateOp(builder);
-	    };
-	    return UpdateOpT;
-	}();
-	exports.UpdateOpT = UpdateOpT;
 
 /***/ }),
 /* 36 */
@@ -3697,11 +3682,11 @@
 	var tmpQuaternion = new THREE.Quaternion();
 	var BASE_OWNER_TIME = 1636600000000;
 
-	var FBMessage = __webpack_require__(32).Message;
+	var FBMessage = __webpack_require__(33).Message;
 	var FBFullUpdateData = __webpack_require__(23).FullUpdateData;
-	var FBUpdateOp = __webpack_require__(35).UpdateOp;
-	var FBDeleteOp = __webpack_require__(34).DeleteOp;
-	var FBCustomOp = __webpack_require__(33).CustomOp;
+	var FBUpdateOp = __webpack_require__(31).UpdateOp;
+	var FBDeleteOp = __webpack_require__(35).DeleteOp;
+	var FBCustomOp = __webpack_require__(34).CustomOp;
 
 	var uuidByteBuf = [];
 	var opOffsetBuf = [];
@@ -3814,6 +3799,10 @@
 	    this.incomingSenders = [];
 	    this.incomingPaused = false;
 
+	    // Set of network ids that had a full sync but have not yet shown up in the set of
+	    // entities. This avoids processing any messages until it has been instantiated.
+	    this.instantiatingNetworkIds = new Set();
+
 	    this.nextSyncTime = 0;
 	  },
 	  register: function register(component) {
@@ -3856,19 +3845,41 @@
 
 	      FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
 
+	      // Do a pass over the updates first to determine if this message should be skipped + requeued
 	      for (var _i = 0, _l = messageRef.updatesLength(); _i < _l; _i++) {
 	        messageRef.updates(_i, updateRef);
 
+	        var networkId = updateRef.networkId();
+	        var hasInstantiatedEntity = NAF.entities.hasEntity(networkId);
 	        var isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
 
-	        // Requeue the message if we don't have an entity yet if:
-	        // - It is a full sync for a persistent object (scene will add it)
-	        // - It is a non full sync (the entity is mid-instantiation still)
-	        if ((isFullSync && fullUpdateDataRef.persistent() || !isFullSync) && !NAF.entities.hasEntity(updateRef.networkId())) {
-	          incomingData.push(data);
-	          incomingSources.push(source);
-	          incomingSenders.push(sender);
-	          continue outer;
+	        if (hasInstantiatedEntity) {
+	          if (this.instantiatingNetworkIds.size > 0 && this.instantiatingNetworkIds.has(networkId)) {
+	            this.instantiatingNetworkIds.delete(networkId);
+	          }
+	        } else {
+	          // Possibly re-queue messages for missing entities
+	          // For persistent missing entities, requeue all messages since scene creates it.
+	          if (isFullSync && fullUpdateDataRef.persistent()) {
+	            incomingData.push(data);
+	            incomingSources.push(source);
+	            incomingSenders.push(sender);
+	            continue outer;
+	          } else {
+	            // Let through the first full sync for a new, non-persistent entity
+	            var isFirstFullSync = isFullSync && !this.instantiatingNetworkIds.has(networkId);
+
+	            if (isFirstFullSync) {
+	              // Mark entity as instantiating so we don't consume subsequent first syncs.
+	              this.instantiatingNetworkIds.add(networkId);
+	            } else {
+	              // Otherwise re-queue
+	              incomingData.push(data);
+	              incomingSources.push(source);
+	              incomingSenders.push(sender);
+	              continue outer;
+	            }
+	          }
 	        }
 	      }
 
@@ -4035,9 +4046,9 @@
 	      if (this.data.attachTemplateToLocal) {
 	        this.attachTemplateToLocal();
 	      }
-
-	      this.registerEntity(this.data.networkId);
 	    }
+
+	    NAF.entities.registerEntity(networkId, this.el);
 
 	    this.lastOwnerTime = 1;
 
@@ -4099,23 +4110,6 @@
 	      this.parent = parentEl;
 	    } else {
 	      this.parent = null;
-	    }
-	  },
-
-	  registerEntity: function registerEntity(networkId) {
-	    NAF.entities.registerEntity(networkId, this.el);
-	  },
-
-	  applyPersistentFirstSync: function applyPersistentFirstSync() {
-	    var _data = this.data,
-	        networkId = _data.networkId,
-	        creator = _data.creator;
-
-	    var persistentUpdateRef = NAF.entities.getPersistentFirstSync(networkId);
-	    if (persistentUpdateRef) {
-	      // Can presume offset zero for first full sync
-	      this.networkUpdate(persistentUpdateRef, creator);
-	      NAF.entities.forgetPersistentFirstSync(networkId);
 	    }
 	  },
 
@@ -4461,9 +4455,9 @@
 	        }
 	      } else {
 	        if (NAF.connection.adapter.authorizeEntityManipulation(this.el, sender)) {
-	          var x = refGetNumeric(componentDataRef, 1);
-	          var y = refGetNumeric(componentDataRef, 2);
-	          var z = refGetNumeric(componentDataRef, 3);
+	          var x = refGetNumeric(componentDataRef, 1) || 0;
+	          var y = refGetNumeric(componentDataRef, 2) || 0;
+	          var z = refGetNumeric(componentDataRef, 3) || 0;
 
 	          var lerper = void 0;
 

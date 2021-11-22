@@ -2,6 +2,7 @@
 var ChildEntityCache = require('./ChildEntityCache');
 const uuid = require("uuid")
 const FBFullUpdateData = require('./schema/networked-aframe/full-update-data').FullUpdateData;
+const FBUpdateOp = require('./schema/networked-aframe/update-op').UpdateOp;
 
 const fullUpdateDataRef = new FBFullUpdateData();
 const uuidByteBuf = [];
@@ -54,7 +55,11 @@ class NetworkEntities {
     const template = fullUpdateData.template();
     const persistent = fullUpdateData.persistent();
 
-    entity.firstUpdateRef = updateRef;
+    // Clone update ref, since reference will be re-used
+    entity.firstUpdateRef = new FBUpdateOp();
+    entity.firstUpdateRef.bb = updateRef.bb;
+    entity.firstUpdateRef.bb_pos = updateRef.bb_pos;
+
     entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
   }
 

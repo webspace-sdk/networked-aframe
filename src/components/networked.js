@@ -789,9 +789,9 @@ AFRAME.registerComponent('networked', {
         }
       } else {
         if (NAF.connection.adapter.authorizeEntityManipulation(this.el, sender)) {
-          const x = refGetNumeric(componentDataRef, 1);
-          const y = refGetNumeric(componentDataRef, 2);
-          const z = refGetNumeric(componentDataRef, 3);
+          const x = refGetNumeric(componentDataRef, 1) || 0;
+          const y = refGetNumeric(componentDataRef, 2) || 0;
+          const z = refGetNumeric(componentDataRef, 3) || 0;
 
           let lerper;
 
