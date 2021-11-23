@@ -578,7 +578,6 @@ AFRAME.registerComponent('networked', {
           flexbuilder.startVector();
         }
 
-        this.sentFirstComponentSyncs[i] = true;
         let dataToSync = syncedComponentData;
 
         if (this.positionNormalizer && componentName === "position") {
@@ -586,6 +585,7 @@ AFRAME.registerComponent('networked', {
         }
 
         if (dataToSync !== null) {
+          this.sentFirstComponentSyncs[i] = true;
           hadComponents = true;
 
           flexbuilder.startVector();
