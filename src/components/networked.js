@@ -588,7 +588,7 @@ AFRAME.registerComponent('networked', {
           flexbuilder.addFloat(Math.fround(dataToSync.y));
           flexbuilder.addFloat(Math.fround(dataToSync.z));
         } else {
-          if (typeof dataToSync === 'object') {
+          if (dataToSync !== null && typeof dataToSync === 'object') {
             if (!aframeSchemaSortedKeys.has(componentName)) {
               aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
             }
@@ -618,7 +618,7 @@ AFRAME.registerComponent('networked', {
                 }
               }
             }
-          } else {
+          } else if (dataToSync !== null) {
             flexbuilder.addInt(0);
 
             const value = dataToSync;
