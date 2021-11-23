@@ -573,7 +573,6 @@ AFRAME.registerComponent('networked', {
       // Use networkUpdatePredicate to check if the component needs to be updated.
       // Call networkUpdatePredicate first so that it can update any cached values in the event of a fullSync.
       if (!this.sentFirstComponentSyncs[i] || this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
-        console.log("send");
         // Components preamble
         if (!hadComponents) {
           flexbuilder.startVector();
