@@ -365,6 +365,12 @@ AFRAME.registerComponent('networked', {
 
     this.componentSchemas =  NAF.schemas.getComponents(this.data.template);
     this.cachedElements = new Array(this.componentSchemas.length);
+
+    // Maintain a bit that determines if a component has ever been synced out.
+    // In cases where we add a component after-the-fact, without this bit we will
+    // skip the initial update.
+    this.sentFirstComponentSyncs = this.componentSchemas.map(() => false);
+
     this.networkUpdatePredicates = this.componentSchemas.map(x => (x.requiresNetworkUpdate && x.requiresNetworkUpdate()) || defaultRequiresUpdate());
 
     // Fill cachedElements array with null elements
@@ -566,82 +572,86 @@ AFRAME.registerComponent('networked', {
 
       // Use networkUpdatePredicate to check if the component needs to be updated.
       // Call networkUpdatePredicate first so that it can update any cached values in the event of a fullSync.
-      if (this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
+      if (!this.sentFirstComponentSyncs[i] || this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
+        console.log("send");
         // Components preamble
         if (!hadComponents) {
           flexbuilder.startVector();
         }
 
-        hadComponents = true;
-
+        this.sentFirstComponentSyncs[i] = true;
         let dataToSync = syncedComponentData;
 
         if (this.positionNormalizer && componentName === "position") {
           dataToSync = this.positionNormalizer(dataToSync, this.el);
         }
 
-        flexbuilder.startVector();
-        flexbuilder.addInt(i);
+        if (dataToSync !== null) {
+          hadComponents = true;
 
-        if (OBJECT3D_COMPONENTS.includes(componentName)) {
-          flexbuilder.addFloat(Math.fround(dataToSync.x));
-          flexbuilder.addFloat(Math.fround(dataToSync.y));
-          flexbuilder.addFloat(Math.fround(dataToSync.z));
-        } else {
-          if (dataToSync !== null && typeof dataToSync === 'object') {
-            if (!aframeSchemaSortedKeys.has(componentName)) {
-              aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
-            }
+          flexbuilder.startVector();
+          flexbuilder.addInt(i);
 
-            const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+          if (OBJECT3D_COMPONENTS.includes(componentName)) {
+            flexbuilder.addFloat(Math.fround(dataToSync.x));
+            flexbuilder.addFloat(Math.fround(dataToSync.y));
+            flexbuilder.addFloat(Math.fround(dataToSync.z));
+          } else {
+            if (typeof dataToSync === 'object') {
+              if (!aframeSchemaSortedKeys.has(componentName)) {
+                aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
+              }
 
-            for (let j = 0; j <= aframeSchemaKeys.length; j++) {
-              const key = aframeSchemaKeys[j];
+              const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-              if (dataToSync[key] !== undefined) {
-                flexbuilder.addInt(j);
+              for (let j = 0; j <= aframeSchemaKeys.length; j++) {
+                const key = aframeSchemaKeys[j];
 
-                const value = dataToSync[key];
+                if (dataToSync[key] !== undefined) {
+                  flexbuilder.addInt(j);
 
-                if (typeof value === "number") {
-                  if (Number.isInteger(value)) {
-                    if (value > 2147483647 || value < -2147483648) {
-                      NAF.log.error('64 bit integers not supported', value, componentSchema);
+                  const value = dataToSync[key];
+
+                  if (typeof value === "number") {
+                    if (Number.isInteger(value)) {
+                      if (value > 2147483647 || value < -2147483648) {
+                        NAF.log.error('64 bit integers not supported', value, componentSchema);
+                      } else {
+                        flexbuilder.add(value);
+                      }
                     } else {
-                      flexbuilder.add(value);
+                      flexbuilder.add(Math.fround(value));
                     }
                   } else {
-                    flexbuilder.add(Math.fround(value));
+                    flexbuilder.add(value);
                   }
-                } else {
-                  flexbuilder.add(value);
                 }
-              }
-            }
-          } else if (dataToSync !== null) {
-            flexbuilder.addInt(0);
-
-            const value = dataToSync;
-
-            if (typeof value === "object") {
-              NAF.log.error('Schema should not set property for object or array values', value, componentSchema);
-            } else if (typeof value === "number") {
-              if (Number.isInteger(value)) {
-                if (value > 2147483647 || value < -2147483648) {
-                  NAF.log.error('64 bit integers not supported', value, componentSchema);
-                } else {
-                  flexbuilder.add(value);
-                }
-              } else {
-                flexbuilder.add(Math.fround(value));
               }
             } else {
-              flexbuilder.add(value);
+              flexbuilder.addInt(0);
+
+              const value = dataToSync;
+
+              if (typeof value === "object") {
+                NAF.log.error('Schema should not set property for object or array values', value, componentSchema);
+              } else if (typeof value === "number") {
+                if (Number.isInteger(value)) {
+                  if (value > 2147483647 || value < -2147483648) {
+                    NAF.log.error('64 bit integers not supported', value, componentSchema);
+                  } else {
+                    flexbuilder.add(value);
+                  }
+                } else {
+                  flexbuilder.add(Math.fround(value));
+                }
+              } else {
+                flexbuilder.add(value);
+              }
             }
           }
-        }
 
-        flexbuilder.end();
+          flexbuilder.end();
+        }
       }
     }
 
