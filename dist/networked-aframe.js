@@ -3790,6 +3790,8 @@
 
 	AFRAME.registerSystem("networked", {
 	  init: function init() {
+	    var _this = this;
+
 	    // An array of "networked" component instances.
 	    this.components = [];
 
@@ -3804,6 +3806,14 @@
 	    this.instantiatingNetworkIds = new Set();
 
 	    this.nextSyncTime = 0;
+
+	    setInterval(function () {
+	      if (!NAF.connection.adapter) return;
+	      if (!_this.incomingPaused) _this.performReceiveStep();
+
+	      if (_this.el.clock.elapsedTime < _this.nextSyncTime) return;
+	      _this.performSendStep();
+	    }, 100);
 	  },
 	  register: function register(component) {
 	    this.components.push(component);
@@ -3820,18 +3830,6 @@
 	    this.incomingSources.push(source);
 	    this.incomingSenders.push(sender);
 	  },
-
-
-	  tick: function () {
-	    return function () {
-	      if (!NAF.connection.adapter) return;
-	      if (!this.incomingPaused) this.performReceiveStep();
-
-	      if (this.el.clock.elapsedTime < this.nextSyncTime) return;
-	      this.performSendStep();
-	    };
-	  }(),
-
 	  performReceiveStep: function performReceiveStep() {
 	    var incomingData = this.incomingData,
 	        incomingSources = this.incomingSources,
@@ -4118,7 +4116,7 @@
 	  },
 
 	  onConnected: function onConnected() {
-	    var _this = this;
+	    var _this2 = this;
 
 	    this.positionNormalizer = NAF.entities.positionNormalizer;
 	    this.positionDenormalizer = NAF.entities.positionDenormalizer;
@@ -4129,11 +4127,11 @@
 	      this.el.object3D.matrixNeedsUpdate = true;
 	      setTimeout(function () {
 	        //a-primitives attach their components on the next frame; wait for components to be attached before calling syncAll
-	        if (!_this.el.parentNode) {
+	        if (!_this2.el.parentNode) {
 	          NAF.log.warn("Networked element was removed before ever getting the chance to syncAll");
 	          return;
 	        }
-	        _this.syncAll();
+	        _this2.syncAll();
 	      }, 0);
 	    }
 
@@ -4383,8 +4381,8 @@
 	    }
 
 	    var componentArray = updateRef.componentsArray();
-	    var len = componentArray.byteLength;
 	    var dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
+	    var len = dataView.byteLength;
 	    var byteWidth = dataView.getUint8(len - 1);
 	    var packedType = dataView.getUint8(len - 2);
 	    var parentWidth = fromByteWidth(byteWidth);

@@ -137,6 +137,23 @@ AFRAME.registerSystem("networked", {
     this.instantiatingNetworkIds = new Set();
 
     this.nextSyncTime = 0;
+    
+    let running = false;
+
+    // Main networking loop, doesn't run on RAF
+    setInterval(() => {
+      if (running || !NAF.connection.adapter) return;
+
+      running = true;
+
+      try {
+        if (performance.now() < this.nextSyncTime) return;
+        if (!this.incomingPaused) this.performReceiveStep();
+        this.performSendStep();
+      } finally {
+        running = false;
+      }
+    }, 1000.0 / 60.0); // 60hz outer loop
   },
 
   register(component) {
@@ -156,16 +173,6 @@ AFRAME.registerSystem("networked", {
     this.incomingSources.push(source);
     this.incomingSenders.push(sender);
   },
-
-  tick: (function() {
-    return function() {
-      if (!NAF.connection.adapter) return;
-      if (!this.incomingPaused) this.performReceiveStep();
-
-      if (this.el.clock.elapsedTime < this.nextSyncTime) return;
-      this.performSendStep();
-    };
-  })(),
 
   performReceiveStep() {
     const { incomingData, incomingSources, incomingSenders } = this;
@@ -317,7 +324,7 @@ AFRAME.registerSystem("networked", {
   },
 
   updateNextSyncTime() {
-    this.nextSyncTime = this.el.clock.elapsedTime + 1 / NAF.options.updateRate;
+    this.nextSyncTime = performance.now() + 1000.0 / NAF.options.updateRate;
   }
 });
 
@@ -717,8 +724,8 @@ AFRAME.registerComponent('networked', {
     }
 
     const componentArray = updateRef.componentsArray();
-    const len = componentArray.byteLength;
     const dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
+    const len = dataView.byteLength;
     const byteWidth = dataView.getUint8(len - 1);
     const packedType = dataView.getUint8(len - 2);
     const parentWidth = fromByteWidth(byteWidth);
