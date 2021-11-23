@@ -694,57 +694,56 @@ AFRAME.registerComponent('networked', {
   /* Receiving updates */
 
   networkUpdate: function(updateRef, sender) {
-
-    uuidByteBuf.length = 16;
-    for (let i = 0; i < 16; i++) {
-      uuidByteBuf[i] = updateRef.owner(i);
-    }
-
-    const entityDataOwner = uuid.stringify(uuidByteBuf);
-    const entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
-
-    // Avoid updating components if the entity data received did not come from the current owner.
-    if (entityDataLastOwnerTime < this.lastOwnerTime ||
-          (this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner)) {
-      return;
-    }
-
-    const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
-
-    if (isFullSync && this.data.owner !== entityDataOwner) {
-      var wasMine = this.isMine();
-      this.lastOwnerTime = entityDataLastOwnerTime;
-
-      const oldOwner = this.data.owner;
-      const newOwner = entityDataOwner;
-
-      this.el.setAttribute('networked', { owner: entityDataOwner });
-
-      if (wasMine) {
-        this.onOwnershipLostEvent.newOwner = newOwner;
-        this.el.emit(this.OWNERSHIP_LOST, this.onOwnershipLostEvent);
-      }
-      this.onOwnershipChangedEvent.oldOwner = oldOwner;
-      this.onOwnershipChangedEvent.newOwner = newOwner;
-      this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
-    }
-    if (isFullSync && this.data.persistent !== fullUpdateDataRef.persistent()) {
-      this.el.setAttribute('networked', { persistent: fullUpdateDataRef.persistent() });
-    }
-
-    const componentArray = updateRef.componentsArray();
-    const dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
-    const len = dataView.byteLength;
-    const byteWidth = dataView.getUint8(len - 1);
-    const packedType = dataView.getUint8(len - 2);
-    const parentWidth = fromByteWidth(byteWidth);
-    const offset = len - byteWidth - 2;
-    const entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
-
     try {
+      uuidByteBuf.length = 16;
+      for (let i = 0; i < 16; i++) {
+        uuidByteBuf[i] = updateRef.owner(i);
+      }
+
+      const entityDataOwner = uuid.stringify(uuidByteBuf);
+      const entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
+
+      // Avoid updating components if the entity data received did not come from the current owner.
+      if (entityDataLastOwnerTime < this.lastOwnerTime ||
+            (this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner)) {
+        return;
+      }
+
+      const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
+
+      if (isFullSync && this.data.owner !== entityDataOwner) {
+        var wasMine = this.isMine();
+        this.lastOwnerTime = entityDataLastOwnerTime;
+
+        const oldOwner = this.data.owner;
+        const newOwner = entityDataOwner;
+
+        this.el.setAttribute('networked', { owner: entityDataOwner });
+
+        if (wasMine) {
+          this.onOwnershipLostEvent.newOwner = newOwner;
+          this.el.emit(this.OWNERSHIP_LOST, this.onOwnershipLostEvent);
+        }
+        this.onOwnershipChangedEvent.oldOwner = oldOwner;
+        this.onOwnershipChangedEvent.newOwner = newOwner;
+        this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
+      }
+      if (isFullSync && this.data.persistent !== fullUpdateDataRef.persistent()) {
+        this.el.setAttribute('networked', { persistent: fullUpdateDataRef.persistent() });
+      }
+
+      const componentArray = updateRef.componentsArray();
+      const dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
+      const len = dataView.byteLength;
+      const byteWidth = dataView.getUint8(len - 1);
+      const packedType = dataView.getUint8(len - 2);
+      const parentWidth = fromByteWidth(byteWidth);
+      const offset = len - byteWidth - 2;
+      const entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
+
       this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
     } catch (e) {
-      NAF.log.error('Error updating network components', sender, e);
+      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
     }
   },
 
