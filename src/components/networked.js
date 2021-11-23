@@ -740,7 +740,12 @@ AFRAME.registerComponent('networked', {
     const parentWidth = fromByteWidth(byteWidth);
     const offset = len - byteWidth - 2;
     const entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
-    this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
+
+    try {
+      this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
+    } catch (e) {
+      NAF.log.error('Error updating network components', sender, e);
+    }
   },
 
   updateNetworkedComponents: function(entityDataRef, isFullSync, sender) {
