@@ -773,7 +773,7 @@ AFRAME.registerComponent('networked', {
             const schema = AFRAME.components[componentName].schema;
 
             if (schema.default) {
-              aframeSchemaSortedKeys.set(componentName, [].sort());
+              aframeSchemaSortedKeys.set(componentName, []);
             } else {
               aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
             }
