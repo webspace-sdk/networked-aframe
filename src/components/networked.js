@@ -29,6 +29,8 @@ const updateRef = new FBUpdateOp();
 const deleteRef = new FBDeleteOp();
 const customRef = new FBCustomOp();
 
+const MAX_AWAIT_INSTANTIATION_MS = 10000;
+
 const base64ToUint8Array = (base64) => {
     var binary_string = window.atob(base64);
     var len = binary_string.length;
@@ -134,7 +136,7 @@ AFRAME.registerSystem("networked", {
 
     // Set of network ids that had a full sync but have not yet shown up in the set of
     // entities. This avoids processing any messages until it has been instantiated.
-    this.instantiatingNetworkIds = new Set();
+    this.instantiatingNetworkIds = new Map();
 
     this.nextSyncTime = 0;
     
@@ -184,6 +186,7 @@ AFRAME.registerSystem("networked", {
       const sender = incomingSenders.shift();
 
       FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
+      const now = performance.now();
 
       // Do a pass over the updates first to determine if this message should be skipped + requeued
       for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
@@ -211,12 +214,18 @@ AFRAME.registerSystem("networked", {
 
             if (isFirstFullSync) {
               // Mark entity as instantiating so we don't consume subsequent first syncs.
-              this.instantiatingNetworkIds.add(networkId);
+              this.instantiatingNetworkIds.set(networkId, performance.now());
             } else {
-              // Otherwise re-queue
-              incomingData.push(data);
-              incomingSources.push(source);
-              incomingSenders.push(sender);
+              // Otherwise re-queue or skip if instantiation never showed up after delay.
+              //
+              // If delay has been met, we just stop re-enqueuing. Instantiation probably failed.
+              if (!this.instantiatingNetworkIds.has(networkId) ||
+                now - this.instantiatingNetworkIds.get(networkId) < MAX_AWAIT_INSTANTIATION_MS) {
+                incomingData.push(data);
+                incomingSources.push(source);
+                incomingSenders.push(sender);
+              }
+
               continue outer;
             }
           }
