@@ -31,15 +31,6 @@ const customRef = new FBCustomOp();
 
 const MAX_AWAIT_INSTANTIATION_MS = 10000;
 
-const stringToUint8Array = (string) => {
-    var len = string.length;
-    var bytes = new Uint8Array(len);
-    for (var i = 0; i < len; i++) {
-        bytes[i] = string.charCodeAt(i);
-    }
-    return bytes;
-};
-
 function uuidParse(uuid, arr) {
   arr.length = 16;
 
