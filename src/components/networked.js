@@ -31,12 +31,11 @@ const customRef = new FBCustomOp();
 
 const MAX_AWAIT_INSTANTIATION_MS = 10000;
 
-const base64ToUint8Array = (base64) => {
-    var binary_string = window.atob(base64);
-    var len = binary_string.length;
+const stringToUint8Array = (string) => {
+    var len = string.length;
     var bytes = new Uint8Array(len);
     for (var i = 0; i < len; i++) {
-        bytes[i] = binary_string.charCodeAt(i);
+        bytes[i] = string.charCodeAt(i);
     }
     return bytes;
 };
@@ -95,12 +94,12 @@ const resetFlexBuilder = () => {
 // Map of aframe component name -> sorted attribute list
 const aframeSchemaSortedKeys = new Map();
 
-const typedArrayToBase64 = ( bytes ) => {
+const typedArrayToString = ( bytes ) => {
     let binary = '';
     for (let i = 0, l = bytes.byteLength; i < l; i++) {
         binary += String.fromCharCode( bytes[ i ] );
     }
-    return window.btoa( binary );
+    return binary;
 };
 
 function defaultRequiresUpdate() {
@@ -185,7 +184,7 @@ AFRAME.registerSystem("networked", {
       const source = incomingSources.shift();
       const sender = incomingSenders.shift();
 
-      FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
+      FBMessage.getRootAsMessage(new ByteBuffer(stringToUint8Array(data)), messageRef);
       const now = performance.now();
 
       // Do a pass over the updates first to determine if this message should be skipped + requeued
@@ -323,9 +322,9 @@ AFRAME.registerSystem("networked", {
       flatbuilder.finish(messageOffset);
 
       if (sendGuaranteed) {
-        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
       } else {
-        NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+        NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
       }
     }
 
@@ -885,7 +884,7 @@ AFRAME.registerComponent('networked', {
 
         flatbuilder.finish(messageOffset);
 
-        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
       } else {
         NAF.log.error("Removing networked entity that is not in entities array.");
       }

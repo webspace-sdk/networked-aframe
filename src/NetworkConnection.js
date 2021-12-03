@@ -10,12 +10,12 @@ const flatbuilder = new Builder(1024);
 const FBMessage = require('./schema/networked-aframe/message').Message;
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp;
 
-const typedArrayToBase64 = ( bytes ) => {
+const typedArrayToString = ( bytes ) => {
     let binary = '';
     for (let i = 0, l = bytes.byteLength; i < l; i++) {
         binary += String.fromCharCode( bytes[ i ] );
     }
-    return window.btoa( binary );
+    return binary;
 };
 
 class NetworkConnection {
@@ -158,9 +158,9 @@ class NetworkConnection {
     this.fillBuilderWithCustomData(dataType, customData);
 
     if (guaranteed) {
-      NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+      NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
     } else {
-      NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+      NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
     }
   }
 
@@ -203,9 +203,9 @@ class NetworkConnection {
     this.fillBuilderWithCustomData(dataType, customData);
 
     if (guaranteed) {
-      NAF.connection.sendDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()), toClientId);
+      NAF.connection.sendDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()), toClientId);
     } else {
-      NAF.connection.sendData(typedArrayToBase64(flatbuilder.asUint8Array()), toClientId);
+      NAF.connection.sendData(typedArrayToString(flatbuilder.asUint8Array()), toClientId);
     }
   }
 

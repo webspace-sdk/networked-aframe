@@ -2934,12 +2934,12 @@
 	var FBMessage = __webpack_require__(33).Message;
 	var FBCustomOp = __webpack_require__(34).CustomOp;
 
-	var typedArrayToBase64 = function typedArrayToBase64(bytes) {
+	var typedArrayToString = function typedArrayToString(bytes) {
 	  var binary = '';
 	  for (var i = 0, l = bytes.byteLength; i < l; i++) {
 	    binary += String.fromCharCode(bytes[i]);
 	  }
-	  return window.btoa(binary);
+	  return binary;
 	};
 
 	var NetworkConnection = function () {
@@ -3100,9 +3100,9 @@
 	      this.fillBuilderWithCustomData(dataType, customData);
 
 	      if (guaranteed) {
-	        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
 	      } else {
-	        NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
 	      }
 	    }
 	  }, {
@@ -3149,9 +3149,9 @@
 	      this.fillBuilderWithCustomData(dataType, customData);
 
 	      if (guaranteed) {
-	        NAF.connection.sendDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()), toClientId);
+	        NAF.connection.sendDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()), toClientId);
 	      } else {
-	        NAF.connection.sendData(typedArrayToBase64(flatbuilder.asUint8Array()), toClientId);
+	        NAF.connection.sendData(typedArrayToString(flatbuilder.asUint8Array()), toClientId);
 	      }
 	    }
 	  }, {
@@ -3696,12 +3696,13 @@
 	var deleteRef = new FBDeleteOp();
 	var customRef = new FBCustomOp();
 
-	var base64ToUint8Array = function base64ToUint8Array(base64) {
-	  var binary_string = window.atob(base64);
-	  var len = binary_string.length;
+	var MAX_AWAIT_INSTANTIATION_MS = 10000;
+
+	var stringToUint8Array = function stringToUint8Array(string) {
+	  var len = string.length;
 	  var bytes = new Uint8Array(len);
 	  for (var i = 0; i < len; i++) {
-	    bytes[i] = binary_string.charCodeAt(i);
+	    bytes[i] = string.charCodeAt(i);
 	  }
 	  return bytes;
 	};
@@ -3760,12 +3761,12 @@
 	// Map of aframe component name -> sorted attribute list
 	var aframeSchemaSortedKeys = new Map();
 
-	var typedArrayToBase64 = function typedArrayToBase64(bytes) {
+	var typedArrayToString = function typedArrayToString(bytes) {
 	  var binary = '';
 	  for (var i = 0, l = bytes.byteLength; i < l; i++) {
 	    binary += String.fromCharCode(bytes[i]);
 	  }
-	  return window.btoa(binary);
+	  return binary;
 	};
 
 	function defaultRequiresUpdate() {
@@ -3803,17 +3804,26 @@
 
 	    // Set of network ids that had a full sync but have not yet shown up in the set of
 	    // entities. This avoids processing any messages until it has been instantiated.
-	    this.instantiatingNetworkIds = new Set();
+	    this.instantiatingNetworkIds = new Map();
 
 	    this.nextSyncTime = 0;
 
-	    setInterval(function () {
-	      if (!NAF.connection.adapter) return;
-	      if (!_this.incomingPaused) _this.performReceiveStep();
+	    var running = false;
 
-	      if (_this.el.clock.elapsedTime < _this.nextSyncTime) return;
-	      _this.performSendStep();
-	    }, 100);
+	    // Main networking loop, doesn't run on RAF
+	    setInterval(function () {
+	      if (running || !NAF.connection.adapter) return;
+
+	      running = true;
+
+	      try {
+	        if (performance.now() < _this.nextSyncTime) return;
+	        if (!_this.incomingPaused) _this.performReceiveStep();
+	        _this.performSendStep();
+	      } finally {
+	        running = false;
+	      }
+	    }, 1000.0 / 60.0); // 60hz outer loop
 	  },
 	  register: function register(component) {
 	    this.components.push(component);
@@ -3841,7 +3851,8 @@
 	      var source = incomingSources.shift();
 	      var sender = incomingSenders.shift();
 
-	      FBMessage.getRootAsMessage(new ByteBuffer(base64ToUint8Array(data)), messageRef);
+	      FBMessage.getRootAsMessage(new ByteBuffer(stringToUint8Array(data)), messageRef);
+	      var now = performance.now();
 
 	      // Do a pass over the updates first to determine if this message should be skipped + requeued
 	      for (var _i = 0, _l = messageRef.updatesLength(); _i < _l; _i++) {
@@ -3869,12 +3880,17 @@
 
 	            if (isFirstFullSync) {
 	              // Mark entity as instantiating so we don't consume subsequent first syncs.
-	              this.instantiatingNetworkIds.add(networkId);
+	              this.instantiatingNetworkIds.set(networkId, performance.now());
 	            } else {
-	              // Otherwise re-queue
-	              incomingData.push(data);
-	              incomingSources.push(source);
-	              incomingSenders.push(sender);
+	              // Otherwise re-queue or skip if instantiation never showed up after delay.
+	              //
+	              // If delay has been met, we just stop re-enqueuing. Instantiation probably failed.
+	              if (!this.instantiatingNetworkIds.has(networkId) || now - this.instantiatingNetworkIds.get(networkId) < MAX_AWAIT_INSTANTIATION_MS) {
+	                incomingData.push(data);
+	                incomingSources.push(source);
+	                incomingSenders.push(sender);
+	              }
+
 	              continue outer;
 	            }
 	          }
@@ -3966,16 +3982,16 @@
 	      flatbuilder.finish(messageOffset);
 
 	      if (sendGuaranteed) {
-	        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
 	      } else {
-	        NAF.connection.broadcastData(typedArrayToBase64(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
 	      }
 	    }
 
 	    this.updateNextSyncTime();
 	  },
 	  updateNextSyncTime: function updateNextSyncTime() {
-	    this.nextSyncTime = this.el.clock.elapsedTime + 1 / NAF.options.updateRate;
+	    this.nextSyncTime = performance.now() + 1000.0 / NAF.options.updateRate;
 	  }
 	});
 
@@ -4016,6 +4032,14 @@
 
 	    this.componentSchemas = NAF.schemas.getComponents(this.data.template);
 	    this.cachedElements = new Array(this.componentSchemas.length);
+
+	    // Maintain a bit that determines if a component has ever been synced out.
+	    // In cases where we add a component after-the-fact, without this bit we will
+	    // skip the initial update.
+	    this.sentFirstComponentSyncs = this.componentSchemas.map(function () {
+	      return false;
+	    });
+
 	    this.networkUpdatePredicates = this.componentSchemas.map(function (x) {
 	      return x.requiresNetworkUpdate && x.requiresNetworkUpdate() || defaultRequiresUpdate();
 	    });
@@ -4224,13 +4248,11 @@
 
 	      // Use networkUpdatePredicate to check if the component needs to be updated.
 	      // Call networkUpdatePredicate first so that it can update any cached values in the event of a fullSync.
-	      if (this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
+	      if (!this.sentFirstComponentSyncs[i] || this.networkUpdatePredicates[i](syncedComponentData) || fullSync) {
 	        // Components preamble
 	        if (!hadComponents) {
 	          flexbuilder.startVector();
 	        }
-
-	        hadComponents = true;
 
 	        var dataToSync = syncedComponentData;
 
@@ -4238,68 +4260,73 @@
 	          dataToSync = this.positionNormalizer(dataToSync, this.el);
 	        }
 
-	        flexbuilder.startVector();
-	        flexbuilder.addInt(i);
+	        if (dataToSync !== null) {
+	          this.sentFirstComponentSyncs[i] = true;
+	          hadComponents = true;
 
-	        if (OBJECT3D_COMPONENTS.includes(componentName)) {
-	          flexbuilder.addFloat(Math.fround(dataToSync.x));
-	          flexbuilder.addFloat(Math.fround(dataToSync.y));
-	          flexbuilder.addFloat(Math.fround(dataToSync.z));
-	        } else {
-	          if ((typeof dataToSync === 'undefined' ? 'undefined' : _typeof(dataToSync)) === 'object') {
-	            if (!aframeSchemaSortedKeys.has(componentName)) {
-	              aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
-	            }
+	          flexbuilder.startVector();
+	          flexbuilder.addInt(i);
 
-	            var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+	          if (OBJECT3D_COMPONENTS.includes(componentName)) {
+	            flexbuilder.addFloat(Math.fround(dataToSync.x));
+	            flexbuilder.addFloat(Math.fround(dataToSync.y));
+	            flexbuilder.addFloat(Math.fround(dataToSync.z));
+	          } else {
+	            if ((typeof dataToSync === 'undefined' ? 'undefined' : _typeof(dataToSync)) === 'object') {
+	              if (!aframeSchemaSortedKeys.has(componentName)) {
+	                aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
+	              }
 
-	            for (var j = 0; j <= aframeSchemaKeys.length; j++) {
-	              var key = aframeSchemaKeys[j];
+	              var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-	              if (dataToSync[key] !== undefined) {
-	                flexbuilder.addInt(j);
+	              for (var j = 0; j <= aframeSchemaKeys.length; j++) {
+	                var key = aframeSchemaKeys[j];
 
-	                var value = dataToSync[key];
+	                if (dataToSync[key] !== undefined) {
+	                  flexbuilder.addInt(j);
 
-	                if (typeof value === "number") {
-	                  if (Number.isInteger(value)) {
-	                    if (value > 2147483647 || value < -2147483648) {
-	                      NAF.log.error('64 bit integers not supported', value, componentSchema);
+	                  var value = dataToSync[key];
+
+	                  if (typeof value === "number") {
+	                    if (Number.isInteger(value)) {
+	                      if (value > 2147483647 || value < -2147483648) {
+	                        NAF.log.error('64 bit integers not supported', value, componentSchema);
+	                      } else {
+	                        flexbuilder.add(value);
+	                      }
 	                    } else {
-	                      flexbuilder.add(value);
+	                      flexbuilder.add(Math.fround(value));
 	                    }
 	                  } else {
-	                    flexbuilder.add(Math.fround(value));
+	                    flexbuilder.add(value);
 	                  }
-	                } else {
-	                  flexbuilder.add(value);
 	                }
-	              }
-	            }
-	          } else {
-	            flexbuilder.addInt(0);
-
-	            var _value = dataToSync;
-
-	            if ((typeof _value === 'undefined' ? 'undefined' : _typeof(_value)) === "object") {
-	              NAF.log.error('Schema should not set property for object or array values', _value, componentSchema);
-	            } else if (typeof _value === "number") {
-	              if (Number.isInteger(_value)) {
-	                if (_value > 2147483647 || _value < -2147483648) {
-	                  NAF.log.error('64 bit integers not supported', _value, componentSchema);
-	                } else {
-	                  flexbuilder.add(_value);
-	                }
-	              } else {
-	                flexbuilder.add(Math.fround(_value));
 	              }
 	            } else {
-	              flexbuilder.add(_value);
+	              flexbuilder.addInt(0);
+
+	              var _value = dataToSync;
+
+	              if ((typeof _value === 'undefined' ? 'undefined' : _typeof(_value)) === "object") {
+	                NAF.log.error('Schema should not set property for object or array values', _value, componentSchema);
+	              } else if (typeof _value === "number") {
+	                if (Number.isInteger(_value)) {
+	                  if (_value > 2147483647 || _value < -2147483648) {
+	                    NAF.log.error('64 bit integers not supported', _value, componentSchema);
+	                  } else {
+	                    flexbuilder.add(_value);
+	                  }
+	                } else {
+	                  flexbuilder.add(Math.fround(_value));
+	                }
+	              } else {
+	                flexbuilder.add(_value);
+	              }
 	            }
 	          }
-	        }
 
-	        flexbuilder.end();
+	          flexbuilder.end();
+	        }
 	      }
 	    }
 
@@ -4343,52 +4370,56 @@
 	  /* Receiving updates */
 
 	  networkUpdate: function networkUpdate(updateRef, sender) {
-
-	    uuidByteBuf.length = 16;
-	    for (var i = 0; i < 16; i++) {
-	      uuidByteBuf[i] = updateRef.owner(i);
-	    }
-
-	    var entityDataOwner = uuid.stringify(uuidByteBuf);
-	    var entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
-
-	    // Avoid updating components if the entity data received did not come from the current owner.
-	    if (entityDataLastOwnerTime < this.lastOwnerTime || this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner) {
-	      return;
-	    }
-
-	    var isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
-
-	    if (isFullSync && this.data.owner !== entityDataOwner) {
-	      var wasMine = this.isMine();
-	      this.lastOwnerTime = entityDataLastOwnerTime;
-
-	      var oldOwner = this.data.owner;
-	      var newOwner = entityDataOwner;
-
-	      this.el.setAttribute('networked', { owner: entityDataOwner });
-
-	      if (wasMine) {
-	        this.onOwnershipLostEvent.newOwner = newOwner;
-	        this.el.emit(this.OWNERSHIP_LOST, this.onOwnershipLostEvent);
+	    try {
+	      uuidByteBuf.length = 16;
+	      for (var i = 0; i < 16; i++) {
+	        uuidByteBuf[i] = updateRef.owner(i);
 	      }
-	      this.onOwnershipChangedEvent.oldOwner = oldOwner;
-	      this.onOwnershipChangedEvent.newOwner = newOwner;
-	      this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
-	    }
-	    if (isFullSync && this.data.persistent !== fullUpdateDataRef.persistent()) {
-	      this.el.setAttribute('networked', { persistent: fullUpdateDataRef.persistent() });
-	    }
 
-	    var componentArray = updateRef.componentsArray();
-	    var dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
-	    var len = dataView.byteLength;
-	    var byteWidth = dataView.getUint8(len - 1);
-	    var packedType = dataView.getUint8(len - 2);
-	    var parentWidth = fromByteWidth(byteWidth);
-	    var offset = len - byteWidth - 2;
-	    var entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
-	    this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
+	      var entityDataOwner = uuid.stringify(uuidByteBuf);
+	      var entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
+
+	      // Avoid updating components if the entity data received did not come from the current owner.
+	      if (entityDataLastOwnerTime < this.lastOwnerTime || this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner) {
+	        return;
+	      }
+
+	      var isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
+
+	      if (isFullSync && this.data.owner !== entityDataOwner) {
+	        var wasMine = this.isMine();
+	        this.lastOwnerTime = entityDataLastOwnerTime;
+
+	        var oldOwner = this.data.owner;
+	        var newOwner = entityDataOwner;
+
+	        this.el.setAttribute('networked', { owner: entityDataOwner });
+
+	        if (wasMine) {
+	          this.onOwnershipLostEvent.newOwner = newOwner;
+	          this.el.emit(this.OWNERSHIP_LOST, this.onOwnershipLostEvent);
+	        }
+	        this.onOwnershipChangedEvent.oldOwner = oldOwner;
+	        this.onOwnershipChangedEvent.newOwner = newOwner;
+	        this.el.emit(this.OWNERSHIP_CHANGED, this.onOwnershipChangedEvent);
+	      }
+	      if (isFullSync && this.data.persistent !== fullUpdateDataRef.persistent()) {
+	        this.el.setAttribute('networked', { persistent: fullUpdateDataRef.persistent() });
+	      }
+
+	      var componentArray = updateRef.componentsArray();
+	      var dataView = new DataView(componentArray.buffer, componentArray.byteOffset, componentArray.byteLength);
+	      var len = dataView.byteLength;
+	      var byteWidth = dataView.getUint8(len - 1);
+	      var packedType = dataView.getUint8(len - 2);
+	      var parentWidth = fromByteWidth(byteWidth);
+	      var offset = len - byteWidth - 2;
+	      var entityDataRef = new Reference(dataView, offset, parentWidth, packedType, "/");
+
+	      this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
+	    } catch (e) {
+	      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+	    }
 	  },
 
 	  updateNetworkedComponents: function updateNetworkedComponents(entityDataRef, isFullSync, sender) {
@@ -4421,7 +4452,7 @@
 	            var schema = AFRAME.components[componentName].schema;
 
 	            if (schema.default) {
-	              aframeSchemaSortedKeys.set(componentName, [].sort());
+	              aframeSchemaSortedKeys.set(componentName, []);
 	            } else {
 	              aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
 	            }
@@ -4520,7 +4551,7 @@
 
 	        flatbuilder.finish(messageOffset);
 
-	        NAF.connection.broadcastDataGuaranteed(typedArrayToBase64(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
 	      } else {
 	        NAF.log.error("Removing networked entity that is not in entities array.");
 	      }
