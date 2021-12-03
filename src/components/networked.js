@@ -94,14 +94,6 @@ const resetFlexBuilder = () => {
 // Map of aframe component name -> sorted attribute list
 const aframeSchemaSortedKeys = new Map();
 
-const typedArrayToString = ( bytes ) => {
-    let binary = '';
-    for (let i = 0, l = bytes.byteLength; i < l; i++) {
-        binary += String.fromCharCode( bytes[ i ] );
-    }
-    return binary;
-};
-
 function defaultRequiresUpdate() {
   let cachedData = null;
 
@@ -184,7 +176,7 @@ AFRAME.registerSystem("networked", {
       const source = incomingSources.shift();
       const sender = incomingSenders.shift();
 
-      FBMessage.getRootAsMessage(new ByteBuffer(stringToUint8Array(data)), messageRef);
+      FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef);
       const now = performance.now();
 
       // Do a pass over the updates first to determine if this message should be skipped + requeued
@@ -322,9 +314,9 @@ AFRAME.registerSystem("networked", {
       flatbuilder.finish(messageOffset);
 
       if (sendGuaranteed) {
-        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
+        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array());
       } else {
-        NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
+        NAF.connection.broadcastData(flatbuilder.asUint8Array());
       }
     }
 
@@ -884,7 +876,7 @@ AFRAME.registerComponent('networked', {
 
         flatbuilder.finish(messageOffset);
 
-        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
+        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array());
       } else {
         NAF.log.error("Removing networked entity that is not in entities array.");
       }
