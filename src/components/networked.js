@@ -184,6 +184,21 @@ AFRAME.registerSystem("networked", {
             this.instantiatingNetworkIds.delete(networkId);
           }
         } else {
+          // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
+          if (!NAF.connection.activeDataChannels[sender]) {
+            if (!this.awaitingPeers.has(sender) || now - this.awaitingPeers.get(sender) < MAX_AWAIT_INSTANTIATION_MS) {
+              if (!this.awaitingPeers.has(sender)) {
+                this.awaitingPeers.set(sender, performance.now());
+              }
+
+              incomingData.push(data);
+              incomingSources.push(source);
+              incomingSenders.push(sender);
+            }
+
+            continue outer;
+          }
+
           // Possibly re-queue messages for missing entities, or owners still getting webrtc peer set up
           // For persistent missing entities, requeue all messages since scene creates it.
           if (isFullSync && fullUpdateDataRef.persistent()) {
@@ -197,23 +212,9 @@ AFRAME.registerSystem("networked", {
 
             if (isFirstFullSync) {
               // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
-              if (!NAF.connection.activeDataChannels[sender]) {
-                if (!this.awaitingPeers.has(sender) || now - this.awaitingPeers.get(sender) < MAX_AWAIT_INSTANTIATION_MS) {
-                  if (!this.awaitingPeers.has(sender)) {
-                    this.awaitingPeers.set(sender, performance.now());
-                  }
-
-                  incomingData.push(data);
-                  incomingSources.push(source);
-                  incomingSenders.push(sender);
-                }
-
-                continue outer;
-              } else {
-                // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
-                this.awaitingPeers.delete(sender);
-                this.instantiatingNetworkIds.set(networkId, performance.now());
-              }
+              // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
+              this.awaitingPeers.delete(sender);
+              this.instantiatingNetworkIds.set(networkId, performance.now());
             } else {
               // Otherwise re-queue or skip if instantiation never showed up after delay.
               //
