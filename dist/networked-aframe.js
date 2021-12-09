@@ -2934,14 +2934,6 @@
 	var FBMessage = __webpack_require__(33).Message;
 	var FBCustomOp = __webpack_require__(34).CustomOp;
 
-	var typedArrayToString = function typedArrayToString(bytes) {
-	  var binary = '';
-	  for (var i = 0, l = bytes.byteLength; i < l; i++) {
-	    binary += String.fromCharCode(bytes[i]);
-	  }
-	  return binary;
-	};
-
 	var NetworkConnection = function () {
 	  function NetworkConnection(networkEntities) {
 	    _classCallCheck(this, NetworkConnection);
@@ -3100,9 +3092,9 @@
 	      this.fillBuilderWithCustomData(dataType, customData);
 
 	      if (guaranteed) {
-	        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array());
 	      } else {
-	        NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastData(flatbuilder.asUint8Array());
 	      }
 	    }
 	  }, {
@@ -3149,9 +3141,9 @@
 	      this.fillBuilderWithCustomData(dataType, customData);
 
 	      if (guaranteed) {
-	        NAF.connection.sendDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()), toClientId);
+	        NAF.connection.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId);
 	      } else {
-	        NAF.connection.sendData(typedArrayToString(flatbuilder.asUint8Array()), toClientId);
+	        NAF.connection.sendData(flatbuilder.asUint8Array(), toClientId);
 	      }
 	    }
 	  }, {
@@ -3698,15 +3690,6 @@
 
 	var MAX_AWAIT_INSTANTIATION_MS = 10000;
 
-	var stringToUint8Array = function stringToUint8Array(string) {
-	  var len = string.length;
-	  var bytes = new Uint8Array(len);
-	  for (var i = 0; i < len; i++) {
-	    bytes[i] = string.charCodeAt(i);
-	  }
-	  return bytes;
-	};
-
 	function uuidParse(uuid, arr) {
 	  arr.length = 16;
 
@@ -3760,14 +3743,6 @@
 
 	// Map of aframe component name -> sorted attribute list
 	var aframeSchemaSortedKeys = new Map();
-
-	var typedArrayToString = function typedArrayToString(bytes) {
-	  var binary = '';
-	  for (var i = 0, l = bytes.byteLength; i < l; i++) {
-	    binary += String.fromCharCode(bytes[i]);
-	  }
-	  return binary;
-	};
 
 	function defaultRequiresUpdate() {
 	  var cachedData = null;
@@ -3851,7 +3826,7 @@
 	      var source = incomingSources.shift();
 	      var sender = incomingSenders.shift();
 
-	      FBMessage.getRootAsMessage(new ByteBuffer(stringToUint8Array(data)), messageRef);
+	      FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef);
 	      var now = performance.now();
 
 	      // Do a pass over the updates first to determine if this message should be skipped + requeued
@@ -3867,7 +3842,7 @@
 	            this.instantiatingNetworkIds.delete(networkId);
 	          }
 	        } else {
-	          // Possibly re-queue messages for missing entities
+	          // Possibly re-queue messages for missing entities, or owners still getting webrtc peer set up
 	          // For persistent missing entities, requeue all messages since scene creates it.
 	          if (isFullSync && fullUpdateDataRef.persistent()) {
 	            incomingData.push(data);
@@ -3879,8 +3854,18 @@
 	            var isFirstFullSync = isFullSync && !this.instantiatingNetworkIds.has(networkId);
 
 	            if (isFirstFullSync) {
-	              // Mark entity as instantiating so we don't consume subsequent first syncs.
-	              this.instantiatingNetworkIds.set(networkId, performance.now());
+	              // If peer is not connected yet for a first sync, requeue.
+	              if (!NAF.connection.activeDataChannels[sender]) {
+	                console.log("not ready");
+	                incomingData.push(data);
+	                incomingSources.push(source);
+	                incomingSenders.push(sender);
+
+	                continue outer;
+	              } else {
+	                // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
+	                this.instantiatingNetworkIds.set(networkId, performance.now());
+	              }
 	            } else {
 	              // Otherwise re-queue or skip if instantiation never showed up after delay.
 	              //
@@ -3982,9 +3967,9 @@
 	      flatbuilder.finish(messageOffset);
 
 	      if (sendGuaranteed) {
-	        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array());
 	      } else {
-	        NAF.connection.broadcastData(typedArrayToString(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastData(flatbuilder.asUint8Array());
 	      }
 	    }
 
@@ -4551,7 +4536,7 @@
 
 	        flatbuilder.finish(messageOffset);
 
-	        NAF.connection.broadcastDataGuaranteed(typedArrayToString(flatbuilder.asUint8Array()));
+	        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array());
 	      } else {
 	        NAF.log.error("Removing networked entity that is not in entities array.");
 	      }

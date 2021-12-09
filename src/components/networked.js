@@ -119,6 +119,7 @@ AFRAME.registerSystem("networked", {
     // Set of network ids that had a full sync but have not yet shown up in the set of
     // entities. This avoids processing any messages until it has been instantiated.
     this.instantiatingNetworkIds = new Map();
+    this.awaitingPeers = new Map();
 
     this.nextSyncTime = 0;
     
@@ -183,7 +184,7 @@ AFRAME.registerSystem("networked", {
             this.instantiatingNetworkIds.delete(networkId);
           }
         } else {
-          // Possibly re-queue messages for missing entities
+          // Possibly re-queue messages for missing entities, or owners still getting webrtc peer set up
           // For persistent missing entities, requeue all messages since scene creates it.
           if (isFullSync && fullUpdateDataRef.persistent()) {
             incomingData.push(data);
@@ -195,8 +196,24 @@ AFRAME.registerSystem("networked", {
             const isFirstFullSync = isFullSync && !this.instantiatingNetworkIds.has(networkId);
 
             if (isFirstFullSync) {
-              // Mark entity as instantiating so we don't consume subsequent first syncs.
-              this.instantiatingNetworkIds.set(networkId, performance.now());
+              // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
+              if (!NAF.connection.activeDataChannels[sender]) {
+                if (!this.awaitingPeers.has(sender) || now - this.awaitingPeers.get(sender) < MAX_AWAIT_INSTANTIATION_MS) {
+                  if (!this.awaitingPeers.has(sender)) {
+                    this.awaitingPeers.set(sender, performance.now());
+                  }
+
+                  incomingData.push(data);
+                  incomingSources.push(source);
+                  incomingSenders.push(sender);
+                }
+
+                continue outer;
+              } else {
+                // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
+                this.awaitingPeers.delete(sender);
+                this.instantiatingNetworkIds.set(networkId, performance.now());
+              }
             } else {
               // Otherwise re-queue or skip if instantiation never showed up after delay.
               //
