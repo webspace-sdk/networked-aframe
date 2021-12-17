@@ -130,9 +130,16 @@ AFRAME.registerSystem("networked", {
       if (running || !NAF.connection.adapter) return;
 
       running = true;
+      const now = performance.now();
+      const entities = NAF.entities;
 
       try {
-        if (performance.now() < this.nextSyncTime) return;
+        if (now < this.nextSyncTime) return;
+
+        if (entities.needsCompleteSync && now - entities.lastCompleteSyncAt > 1000) {
+          entities.completeSync();
+        }
+
         if (!this.incomingPaused) this.performReceiveStep();
         this.performSendStep();
       } finally {

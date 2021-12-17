@@ -17,6 +17,8 @@ class NetworkEntities {
     this._persistentFirstSyncs = {};
     this.positionNormalizer = null;
     this.positionDenormalizer = null;
+    this.lastCompleteSyncAt = 0;
+    this.needsCompleteSync = false;
   }
 
   registerEntity(networkId, entity) {
@@ -147,6 +149,9 @@ class NetworkEntities {
         this.entities[id].components.networked.sendInitialSync();
       }
     }
+
+    this.needsCompleteSync = false;
+    this.lastCompleteSyncAt = performance.now();
   }
 
   removeRemoteEntity(deleteRef, source, sender) {
