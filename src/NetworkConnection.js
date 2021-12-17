@@ -119,7 +119,7 @@ class NetworkConnection {
   dataChannelOpen(clientId) {
     NAF.log.write('Opened data channel from ' + clientId);
     this.activeDataChannels[clientId] = true;
-    this.entities.completeSync(clientId, true);
+    this.entities.completeSync();
 
     var evt = new CustomEvent('clientConnected', {detail: {clientId: clientId}});
     document.body.dispatchEvent(evt);
@@ -138,12 +138,12 @@ class NetworkConnection {
     return this.activeDataChannels.hasOwnProperty(clientId) && this.activeDataChannels[clientId];
   }
 
-  broadcastData(data) {
-    this.adapter.broadcastData(data);
+  broadcastData(data, initialSyncIds) {
+    this.adapter.broadcastData(data, initialSyncIds);
   }
 
-  broadcastDataGuaranteed(data) {
-    this.adapter.broadcastDataGuaranteed(data);
+  broadcastDataGuaranteed(data, initialSyncIds) {
+    this.adapter.broadcastDataGuaranteed(data, initialSyncIds);
   }
 
   broadcastCustomData(dataType, customData, guaranteed) {

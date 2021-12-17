@@ -256,6 +256,7 @@ AFRAME.registerSystem("networked", {
   performSendStep() {
     let send = false;
     let sendGuaranteed = false;
+    let initialSyncIds = null;
 
     for (let i = 0, l = this.components.length; i < l; i++) {
       const c = this.components[i];
@@ -269,9 +270,19 @@ AFRAME.registerSystem("networked", {
 
       let isFull = false;
 
-      if (c.pendingFullSync) {
+      if (c.pendingFullSync || c.pendingInitialSync) {
         isFull = true;
+
+        if (c.pendingInitialSync) {
+          if (initialSyncIds === null) {
+            initialSyncIds = [c.data.networkId];
+          } else {
+            initialSyncIds.push(c.data.networkId);
+          }
+        }
+
         c.pendingFullSync = false;
+        c.pendingInitialSync = false;
       }
 
       resetFlexBuilder();
@@ -323,9 +334,9 @@ AFRAME.registerSystem("networked", {
       flatbuilder.finish(messageOffset);
 
       if (sendGuaranteed) {
-        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array());
+        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array(), initialSyncIds);
       } else {
-        NAF.connection.broadcastData(flatbuilder.asUint8Array());
+        NAF.connection.broadcastData(flatbuilder.asUint8Array(), initialSyncIds);
       }
     }
 
@@ -367,6 +378,7 @@ AFRAME.registerComponent('networked', {
     this.conversionEuler.order = "YXZ";
     this.lerpers = [];
     this.pendingFullSync = false;
+    this.pendingInitialSync = false;
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -446,7 +458,7 @@ AFRAME.registerComponent('networked', {
       this.lastOwnerTime = now;
       this.removeLerp();
       this.el.setAttribute('networked', { owner: NAF.clientId });
-      this.syncAll();
+      this.sendFullSync();
 
       this.onOwnershipGainedEvent.oldOwner = owner;
       this.el.emit(this.OWNERSHIP_GAINED, this.onOwnershipGainedEvent);
@@ -486,12 +498,12 @@ AFRAME.registerComponent('networked', {
       this.el.setAttribute(this.name, { owner: NAF.clientId, creator: NAF.clientId });
       this.el.object3D.matrixNeedsUpdate = true;
       setTimeout(() => {
-        //a-primitives attach their components on the next frame; wait for components to be attached before calling syncAll
+        //a-primitives attach their components on the next frame; wait for components to be attached before calling sendFullSync
         if (!this.el.parentNode){
-          NAF.log.warn("Networked element was removed before ever getting the chance to syncAll");
+          NAF.log.warn("Networked element was removed before ever getting the chance to sendFullSync");
           return;
         }
-        this.syncAll();
+        this.sendFullSync();
       }, 0);
     }
 
@@ -536,9 +548,14 @@ AFRAME.registerComponent('networked', {
 
   /* Sending updates */
 
-  syncAll: function() {
+  sendFullSync: function() {
     if (!this.canSync()) return;
     this.pendingFullSync = true;
+  },
+
+  sendInitialSync: function() {
+    if (!this.canSync()) return;
+    this.pendingInitialSync = true;
   },
 
   getCachedElement(componentSchemaIndex) {
