@@ -150,6 +150,7 @@ class NetworkEntities {
 
         if (force) {
           networked.sendFullSync();
+          networked.pendingInitialSync = false;
         } else {
           networked.sendInitialSync();
         }
