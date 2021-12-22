@@ -143,10 +143,16 @@ class NetworkEntities {
     scene.appendChild(el);
   }
 
-  completeSync(targetClientId, isFirstSync) {
+  completeSync(force = false) {
     for (var id in this.entities) {
       if (this.entities.hasOwnProperty(id)) {
-        this.entities[id].components.networked.sendInitialSync();
+        const networked = this.entities[id].components.networked;
+
+        if (force) {
+          networked.sendFullSync();
+        } else {
+          networked.sendInitialSync();
+        }
       }
     }
 
