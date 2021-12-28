@@ -237,6 +237,7 @@ class NetworkConnection {
     this.connectedClients = {};
     this.activeDataChannels = {};
     this.adapter = null;
+    AFRAME.scenes[0].systems.networked.reset();
 
     document.body.removeEventListener('connected', this.onConnectCallback);
   }
