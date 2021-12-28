@@ -109,10 +109,13 @@ AFRAME.registerSystem("networked", {
   init() {
     // An array of "networked" component instances.
     this.components = [];
+    this.logNetworkIds = false;
+    this.loggedNetworkIds = new Set();
 
     this.reset();
     
     let running = false;
+    let lastNetworkIdLog = 0;
 
     // Main networking loop, doesn't run on RAF
     setInterval(() => {
@@ -131,6 +134,12 @@ AFRAME.registerSystem("networked", {
 
         if (!this.incomingPaused) this.performReceiveStep();
         this.performSendStep();
+
+        if (this.logNetworkIds && now - lastNetworkIdLog > 1000) {
+          console.log(`NAF: Received updates from ${this.loggedNetworkIds.size} entities.`); // eslint-disable-line no-console
+          this.loggedNetworkIds.clear();
+          lastNetworkIdLog = now;
+        }
       } finally {
         running = false;
       }
@@ -173,6 +182,7 @@ AFRAME.registerSystem("networked", {
 
   performReceiveStep() {
     const { incomingData, incomingSources, incomingSenders } = this;
+    const logNetworkIds = this.logNetworkIds;
 
     outer:
     for (let i = 0, l = incomingData.length; i < l; i++) {
@@ -242,6 +252,12 @@ AFRAME.registerSystem("networked", {
 
       for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
         messageRef.updates(i, updateRef);
+
+        if (logNetworkIds) {
+          const networkId = updateRef.networkId();
+          this.loggedNetworkIds.add(networkId);
+        }
+
         NAF.entities.updateEntity(updateRef, source, sender)
       }
 
