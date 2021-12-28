@@ -110,18 +110,7 @@ AFRAME.registerSystem("networked", {
     // An array of "networked" component instances.
     this.components = [];
 
-    // Incoming messages and flag to determine if incoming message processing should pause
-    this.incomingData = [];
-    this.incomingSources = [];
-    this.incomingSenders = [];
-    this.incomingPaused = false;
-
-    // Set of network ids that had a full sync but have not yet shown up in the set of
-    // entities. This avoids processing any messages until it has been instantiated.
-    this.instantiatingNetworkIds = new Map();
-    this.awaitingPeers = new Map();
-
-    this.nextSyncTime = 0;
+    this.reset();
     
     let running = false;
 
@@ -150,6 +139,7 @@ AFRAME.registerSystem("networked", {
 
   register(component) {
     this.components.push(component);
+    this.instantiatingNetworkIds.delete(component.data.networkId);
   },
 
   deregister(component) {
@@ -164,6 +154,21 @@ AFRAME.registerSystem("networked", {
     this.incomingData.push(data);
     this.incomingSources.push(source);
     this.incomingSenders.push(sender);
+  },
+
+  reset() {
+    // Incoming messages and flag to determine if incoming message processing should pause
+    this.incomingData = [];
+    this.incomingSources = [];
+    this.incomingSenders = [];
+    this.incomingPaused = false;
+
+    // Set of network ids that had a full sync but have not yet shown up in the set of
+    // entities. This avoids processing any messages until it has been instantiated.
+    this.instantiatingNetworkIds = new Map();
+    this.awaitingPeers = new Map();
+
+    this.nextSyncTime = 0;
   },
 
   performReceiveStep() {
@@ -186,11 +191,7 @@ AFRAME.registerSystem("networked", {
         const hasInstantiatedEntity = NAF.entities.hasEntity(networkId);
         const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
 
-        if (hasInstantiatedEntity) {
-          if (this.instantiatingNetworkIds.size > 0 && this.instantiatingNetworkIds.has(networkId)) {
-            this.instantiatingNetworkIds.delete(networkId);
-          }
-        } else {
+        if (!hasInstantiatedEntity) {
           // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
           if (!NAF.connection.activeDataChannels[sender]) {
             if (!this.awaitingPeers.has(sender) || now - this.awaitingPeers.get(sender) < MAX_AWAIT_INSTANTIATION_MS) {
