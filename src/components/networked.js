@@ -309,6 +309,14 @@ AFRAME.registerSystem("networked", {
         c.pendingInitialSync = false;
       }
 
+      if (!c.sentInitialSync) {
+        if (isFull) {
+          c.sentInitialSync = true;
+        } else {
+          continue; // Skip delta syncs until full sync is sent.
+        }
+      }
+
       resetFlexBuilder();
 
       if (!c.pushComponentsDataToFlexBuilder(isFull)) continue;
@@ -403,6 +411,7 @@ AFRAME.registerComponent('networked', {
     this.lerpers = [];
     this.pendingFullSync = false;
     this.pendingInitialSync = false;
+    this.sentInitialSync = false;
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
