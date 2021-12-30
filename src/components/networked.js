@@ -802,7 +802,7 @@ AFRAME.registerComponent('networked', {
 
       this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
     } catch (e) {
-      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && JSON.stringify(Object.values(updateRef.bb.bytes())), e);
     }
   },
 
