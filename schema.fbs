@@ -11,7 +11,7 @@ table UpdateOp {
   network_id:string (required);
   full_update_data:FullUpdateData;
   owner:[ubyte];
-  last_owner_time:uint32;
+  last_owner_time:uint64;
   components:[ubyte] (required, flexbuffer);
 }
 

@@ -3,6 +3,7 @@ const flexbuffers = require('flatbuffers/js/flexbuffers');
 const { Reference } = require('flatbuffers/js/flexbuffers/reference');
 const { ByteBuffer } = require('flatbuffers/js/byte-buffer');
 const { Builder } = require('flatbuffers/js/builder');
+const { Long } = require('flatbuffers/js/long');
 const { fromByteWidth } = require('flatbuffers/js/flexbuffers/bit-width-util');
 const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet } = require('../FlexBufferUtils');
 const uuid = require("uuid")
@@ -13,7 +14,6 @@ const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerpe
 
 const tmpPosition = new THREE.Vector3();
 const tmpQuaternion = new THREE.Quaternion();
-const BASE_OWNER_TIME = 1636600000000;
 
 const FBMessage = require('../schema/networked-aframe/message').Message;
 const FBFullUpdateData = require('../schema/networked-aframe/full-update-data').FullUpdateData;
@@ -28,6 +28,7 @@ const messageRef = new FBMessage();
 const updateRef = new FBUpdateOp();
 const deleteRef = new FBDeleteOp();
 const customRef = new FBCustomOp();
+const tmpLong = new Long(0, 0);
 
 const MAX_AWAIT_INSTANTIATION_MS = 10000;
 
@@ -347,7 +348,9 @@ AFRAME.registerSystem("networked", {
       FBUpdateOp.startUpdateOp(flatbuilder); 
       FBUpdateOp.addNetworkId(flatbuilder, networkIdOffset);
       FBUpdateOp.addOwner(flatbuilder, ownerOffset)
-      FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME)
+      tmpLong.low = c.lastOwnerTime & 0x3fffffff;
+      tmpLong.high = (c.lastOwnerTime - tmpLong.low) / 0x40000000;
+      FBUpdateOp.addLastOwnerTime(flatbuilder, tmpLong);
       FBUpdateOp.addComponents(flatbuilder, componentsOffset);
 
       if (fullUpdateDataOffset !== null) {
@@ -761,7 +764,8 @@ AFRAME.registerComponent('networked', {
       }
 
       const entityDataOwner = uuid.stringify(uuidByteBuf);
-      const entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
+      const ownerTimeLong = updateRef.lastOwnerTime();
+      const entityDataLastOwnerTime = ownerTimeLong.high * 0x40000000 + ownerTimeLong.low;
 
       // Avoid updating components if the entity data received did not come from the current owner.
       if (entityDataLastOwnerTime < this.lastOwnerTime ||

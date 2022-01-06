@@ -43,7 +43,7 @@ var UpdateOp = /** @class */ (function () {
     };
     UpdateOp.prototype.lastOwnerTime = function () {
         var offset = this.bb.__offset(this.bb_pos, 10);
-        return offset ? this.bb.readUint32(this.bb_pos + offset) : 0;
+        return offset ? this.bb.readUint64(this.bb_pos + offset) : this.bb.createLong(0, 0);
     };
     UpdateOp.prototype.components = function (index) {
         var offset = this.bb.__offset(this.bb_pos, 12);
@@ -80,7 +80,7 @@ var UpdateOp = /** @class */ (function () {
         builder.startVector(1, numElems, 1);
     };
     UpdateOp.addLastOwnerTime = function (builder, lastOwnerTime) {
-        builder.addFieldInt32(3, lastOwnerTime, 0);
+        builder.addFieldInt64(3, lastOwnerTime, builder.createLong(0, 0));
     };
     UpdateOp.addComponents = function (builder, componentsOffset) {
         builder.addFieldOffset(4, componentsOffset, 0);
@@ -119,7 +119,7 @@ var UpdateOpT = /** @class */ (function () {
         if (networkId === void 0) { networkId = null; }
         if (fullUpdateData === void 0) { fullUpdateData = null; }
         if (owner === void 0) { owner = []; }
-        if (lastOwnerTime === void 0) { lastOwnerTime = 0; }
+        if (lastOwnerTime === void 0) { lastOwnerTime = flatbuffers.createLong(0, 0); }
         if (components === void 0) { components = []; }
         this.networkId = networkId;
         this.fullUpdateData = fullUpdateData;
