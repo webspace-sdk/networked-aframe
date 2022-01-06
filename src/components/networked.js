@@ -368,6 +368,7 @@ AFRAME.registerComponent('networked', {
     this.conversionEuler.order = "YXZ";
     this.lerpers = [];
     this.pendingFullSync = false;
+    this.lastErrorLoggedAt = 0;
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -753,7 +754,12 @@ AFRAME.registerComponent('networked', {
 
       this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
     } catch (e) {
-      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+      const now = performance.now();
+
+      if (now - this.lastErrorLoggedAt > 1000) {
+        this.lastErrorLoggedAt = now;
+        NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+      }
     }
   },
 
