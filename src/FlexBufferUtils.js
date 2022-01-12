@@ -63,13 +63,13 @@ const refGetBool = (ref, key) => {
 const refGetInt = (ref, key) => {
   refCp(ref, tmpRef);
   refAdvanceToIndexGet(tmpRef, key);
-  return tmpRef.intValue();
+  return Number(tmpRef.intValue());
 }
 
 const refGetNumeric = (ref, key) => {
   refCp(ref, tmpRef);
   refAdvanceToIndexGet(tmpRef, key);
-  return tmpRef.numericValue();
+  return Number(tmpRef.numericValue());
 }
 
 const refGetString = (ref, key) => {
@@ -90,7 +90,7 @@ const refGetUuidBytes = (ref, key, target = []) => {
   refAdvanceToIndexGet(tmpRef2, key);
 
   for (let i = 0; i < 16; i++) {
-    target[i] = refGetInt(tmpRef2, i);
+    target[i] = Number(refGetInt(tmpRef2, i));
   }
 
   return target;

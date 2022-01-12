@@ -611,36 +611,56 @@ AFRAME.registerComponent('networked', {
             flexbuilder.addFloat(Math.fround(dataToSync.z));
           } else {
             if (typeof dataToSync === 'object') {
-              if (!aframeSchemaSortedKeys.has(componentName)) {
-                aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
-              }
+              if (dataToSync.isVector2) {
+                flexbuilder.addInt(0);
+                flexbuilder.addFloat(Math.fround(dataToSync.x));
+                flexbuilder.addFloat(Math.fround(dataToSync.y));
+              } else if (dataToSync.isVector3) {
+                flexbuilder.addInt(1);
+                flexbuilder.addFloat(Math.fround(dataToSync.x));
+                flexbuilder.addFloat(Math.fround(dataToSync.y));
+                flexbuilder.addFloat(Math.fround(dataToSync.z));
+              } else if (dataToSync.isQuaternion) {
+                flexbuilder.addInt(2);
+                flexbuilder.addFloat(Math.fround(dataToSync.x));
+                flexbuilder.addFloat(Math.fround(dataToSync.y));
+                flexbuilder.addFloat(Math.fround(dataToSync.z));
+                flexbuilder.addFloat(Math.fround(dataToSync.w));
+              } else {
+                flexbuilder.addInt(3);
 
-              const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+                if (!aframeSchemaSortedKeys.has(componentName)) {
+                  aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
+                }
 
-              for (let j = 0; j <= aframeSchemaKeys.length; j++) {
-                const key = aframeSchemaKeys[j];
+                const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-                if (dataToSync[key] !== undefined) {
-                  flexbuilder.addInt(j);
+                for (let j = 0; j <= aframeSchemaKeys.length; j++) {
+                  const key = aframeSchemaKeys[j];
 
-                  const value = dataToSync[key];
+                  if (dataToSync[key] !== undefined) {
+                    flexbuilder.addInt(j);
 
-                  if (typeof value === "number") {
-                    if (Number.isInteger(value)) {
-                      if (value > 2147483647 || value < -2147483648) {
-                        NAF.log.error('64 bit integers not supported', value, componentSchema);
+                    const value = dataToSync[key];
+
+                    if (typeof value === "number") {
+                      if (Number.isInteger(value)) {
+                        if (value > 2147483647 || value < -2147483648) {
+                          NAF.log.error('64 bit integers not supported', value, componentSchema);
+                        } else {
+                          flexbuilder.add(value);
+                        }
                       } else {
-                        flexbuilder.add(value);
+                        flexbuilder.add(Math.fround(value));
                       }
                     } else {
-                      flexbuilder.add(Math.fround(value));
+                      flexbuilder.add(value);
                     }
-                  } else {
-                    flexbuilder.add(value);
                   }
                 }
               }
             } else {
+              flexbuilder.addInt(3);
               flexbuilder.addInt(0);
 
               const value = dataToSync;
@@ -785,45 +805,73 @@ AFRAME.registerComponent('networked', {
       const componentName = componentSchema.component ? componentSchema.component : componentSchema;
 
       if (!OBJECT3D_COMPONENTS.includes(componentName)) {
-        if (componentSchema.property) {
-          // Skip the property index which is always zero for this.
-          const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 2) };
+        const type = refGetInt(componentDataRef, 1);
 
-          if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
-            el.setAttribute(componentName, attributeValue);
+        if (type !== 3) {
+        switch (type) {
+          case 0: // Vector2
+            el.setAttribute(componentName, { [componentSchema.property]: new THREE.Vector2(
+              refGetNumeric(componentDataRef, 2) || 0,
+              refGetNumeric(componentDataRef, 3) || 0
+            ) });
+            break;
+          case 1: // Vector3
+            el.setAttribute(componentName, { [componentSchema.property]: new THREE.Vector3(
+              refGetNumeric(componentDataRef, 2) || 0,
+              refGetNumeric(componentDataRef, 3) || 0,
+              refGetNumeric(componentDataRef, 4) || 0
+            ) });
+            break;
+          case 2: // Quaternion
+            el.setAttribute(componentName, { [componentSchema.property]: new THREE.Quaternion(
+              refGetNumeric(componentDataRef, 2) || 0,
+              refGetNumeric(componentDataRef, 3) || 0,
+              refGetNumeric(componentDataRef, 4) || 0,
+              refGetNumeric(componentDataRef, 5) || 0
+            ) });
+            break;
           }
         } else {
-          if (!aframeSchemaSortedKeys.has(componentName)) {
-            const schema = AFRAME.components[componentName].schema;
-
-            if (schema.default) {
-              aframeSchemaSortedKeys.set(componentName, []);
-            } else {
-              aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
-            }
-          }
-
-          const componentDataLength = componentDataRef.length();
-
-          if (componentDataLength > 1) {
-            let attributeValue = {};
-            const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
-
-            for (let j = 1; j < componentDataLength; j += 2) {
-              const key = refGetInt(componentDataRef, j);
-              const value = refGetToObject(componentDataRef, j + 1);
-
-              if (aframeSchemaKeys.length === 0) {
-                // default value case
-                attributeValue = value;
-                break;
-              } else {
-                attributeValue[aframeSchemaKeys[key]] = value;
-              }
-            }
+          if (componentSchema.property) {
+            // Skip the property index which is always zero for this.
+            const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 3) };
 
             if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
               el.setAttribute(componentName, attributeValue);
+            }
+          } else {
+            if (!aframeSchemaSortedKeys.has(componentName)) {
+              const schema = AFRAME.components[componentName].schema;
+
+              if (schema.default) {
+                aframeSchemaSortedKeys.set(componentName, []);
+              } else {
+                aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort());
+              }
+            }
+
+            const componentDataLength = componentDataRef.length();
+
+            if (componentDataLength > 1) {
+              let attributeValue = {};
+              const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+
+              for (let j = 2; j < componentDataLength; j += 2) {
+                const key = refGetInt(componentDataRef, j);
+                const value = refGetToObject(componentDataRef, j + 1);
+
+                if (aframeSchemaKeys.length === 0) {
+                  // default value case
+                  attributeValue = value;
+                  break;
+                } else {
+                  attributeValue[aframeSchemaKeys[key]] = value;
+                }
+              }
+
+              if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+                el.setAttribute(componentName, attributeValue);
+              }
             }
           }
         }
