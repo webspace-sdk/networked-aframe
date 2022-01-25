@@ -455,6 +455,8 @@ AFRAME.registerComponent('networked', {
       if (this.data.attachTemplateToLocal) {
         this.attachTemplateToLocal();
       }
+
+      this.pendingInitialSync = true;
     }
 
     NAF.entities.registerEntity(networkId, this.el);
