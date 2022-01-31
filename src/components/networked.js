@@ -120,9 +120,15 @@ AFRAME.registerSystem("networked", {
       if (running || !NAF.connection.adapter) return;
 
       running = true;
+      const now = performance.now();
 
       try {
-        if (performance.now() < this.nextSyncTime) return;
+        if (now < this.nextSyncTime) return;
+
+        for (const component of this.components) {
+          component.consumeFirstUpdateIfNecessary();
+        }
+
         if (!this.incomingPaused) this.performReceiveStep();
         this.performSendStep();
       } finally {
@@ -372,6 +378,7 @@ AFRAME.registerComponent('networked', {
     this.lerpers = [];
     this.pendingFullSync = false;
     this.lastErrorLoggedAt = 0;
+    this.pendingConsumeFirstUpdate = false;
 
     var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -406,7 +413,7 @@ AFRAME.registerComponent('networked', {
     }
 
     if (wasCreatedByNetwork) {
-      this.firstUpdate();
+      this.pendingConsumeFirstUpdate = true;
     } else {
       if (this.data.attachTemplateToLocal) {
         this.attachTemplateToLocal();
@@ -478,8 +485,10 @@ AFRAME.registerComponent('networked', {
     }
   },
 
-  firstUpdate: function() {
+  consumeFirstUpdateIfNecessary: function() {
+    if (!this.pendingConsumeFirstUpdate) return;
     this.networkUpdate(this.el.firstUpdateRef, this.data.creator);
+    this.pendingConsumeFirstUpdate = false;
   },
 
   onConnected: function() {
@@ -911,7 +920,7 @@ AFRAME.registerComponent('networked', {
               lerper.setScale(x, y, z);
               break;
             default:
-          NAF.log.error('Could not set value in interpolation buffer.', el, componentName, x, y, z);
+              NAF.log.error('Could not set value in interpolation buffer.', el, componentName, x, y, z);
               break;
           }
         }
