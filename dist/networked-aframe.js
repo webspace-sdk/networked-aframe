@@ -50,9 +50,9 @@
 	__webpack_require__(1);
 
 	// Network components
-	__webpack_require__(37);
 	__webpack_require__(38);
-	__webpack_require__(52);
+	__webpack_require__(39);
+	__webpack_require__(53);
 
 /***/ }),
 /* 1 */
@@ -66,7 +66,7 @@
 	var Schemas = __webpack_require__(5);
 	var NetworkEntities = __webpack_require__(6);
 	var NetworkConnection = __webpack_require__(32);
-	var AdapterFactory = __webpack_require__(36);
+	var AdapterFactory = __webpack_require__(37);
 
 	var naf = {};
 	naf.app = '';
@@ -2800,7 +2800,7 @@
 	    };
 	    UpdateOp.prototype.lastOwnerTime = function () {
 	        var offset = this.bb.__offset(this.bb_pos, 10);
-	        return offset ? this.bb.readUint32(this.bb_pos + offset) : 0;
+	        return offset ? this.bb.readUint64(this.bb_pos + offset) : this.bb.createLong(0, 0);
 	    };
 	    UpdateOp.prototype.components = function (index) {
 	        var offset = this.bb.__offset(this.bb_pos, 12);
@@ -2837,7 +2837,7 @@
 	        builder.startVector(1, numElems, 1);
 	    };
 	    UpdateOp.addLastOwnerTime = function (builder, lastOwnerTime) {
-	        builder.addFieldInt32(3, lastOwnerTime, 0);
+	        builder.addFieldInt64(3, lastOwnerTime, builder.createLong(0, 0));
 	    };
 	    UpdateOp.addComponents = function (builder, componentsOffset) {
 	        builder.addFieldOffset(4, componentsOffset, 0);
@@ -2883,7 +2883,7 @@
 	            owner = [];
 	        }
 	        if (lastOwnerTime === void 0) {
-	            lastOwnerTime = 0;
+	            lastOwnerTime = flatbuffers.createLong(0, 0);
 	        }
 	        if (components === void 0) {
 	            components = [];
@@ -3191,6 +3191,7 @@
 	      this.connectedClients = {};
 	      this.activeDataChannels = {};
 	      this.adapter = null;
+	      AFRAME.scenes[0].systems.networked.reset();
 
 	      document.body.removeEventListener('connected', this.onConnectCallback);
 	    }
@@ -3213,6 +3214,7 @@
 	var flatbuffers = __webpack_require__(24);
 	var custom_op_1 = __webpack_require__(34);
 	var delete_op_1 = __webpack_require__(35);
+	var doc_op_1 = __webpack_require__(36);
 	var update_op_1 = __webpack_require__(31);
 	var Message = /** @class */function () {
 	    function Message() {
@@ -3255,8 +3257,16 @@
 	        var offset = this.bb.__offset(this.bb_pos, 8);
 	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
 	    };
+	    Message.prototype.docs = function (index, obj) {
+	        var offset = this.bb.__offset(this.bb_pos, 10);
+	        return offset ? (obj || new doc_op_1.DocOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
+	    };
+	    Message.prototype.docsLength = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 10);
+	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
+	    };
 	    Message.startMessage = function (builder) {
-	        builder.startObject(3);
+	        builder.startObject(4);
 	    };
 	    Message.addUpdates = function (builder, updatesOffset) {
 	        builder.addFieldOffset(0, updatesOffset, 0);
@@ -3297,6 +3307,19 @@
 	    Message.startCustomsVector = function (builder, numElems) {
 	        builder.startVector(4, numElems, 4);
 	    };
+	    Message.addDocs = function (builder, docsOffset) {
+	        builder.addFieldOffset(3, docsOffset, 0);
+	    };
+	    Message.createDocsVector = function (builder, data) {
+	        builder.startVector(4, data.length, 4);
+	        for (var i = data.length - 1; i >= 0; i--) {
+	            builder.addOffset(data[i]);
+	        }
+	        return builder.endVector();
+	    };
+	    Message.startDocsVector = function (builder, numElems) {
+	        builder.startVector(4, numElems, 4);
+	    };
 	    Message.endMessage = function (builder) {
 	        var offset = builder.endObject();
 	        return offset;
@@ -3307,26 +3330,28 @@
 	    Message.finishSizePrefixedMessageBuffer = function (builder, offset) {
 	        builder.finish(offset, undefined, true);
 	    };
-	    Message.createMessage = function (builder, updatesOffset, deletesOffset, customsOffset) {
+	    Message.createMessage = function (builder, updatesOffset, deletesOffset, customsOffset, docsOffset) {
 	        Message.startMessage(builder);
 	        Message.addUpdates(builder, updatesOffset);
 	        Message.addDeletes(builder, deletesOffset);
 	        Message.addCustoms(builder, customsOffset);
+	        Message.addDocs(builder, docsOffset);
 	        return Message.endMessage(builder);
 	    };
 	    Message.prototype.unpack = function () {
-	        return new MessageT(this.bb.createObjList(this.updates.bind(this), this.updatesLength()), this.bb.createObjList(this.deletes.bind(this), this.deletesLength()), this.bb.createObjList(this.customs.bind(this), this.customsLength()));
+	        return new MessageT(this.bb.createObjList(this.updates.bind(this), this.updatesLength()), this.bb.createObjList(this.deletes.bind(this), this.deletesLength()), this.bb.createObjList(this.customs.bind(this), this.customsLength()), this.bb.createObjList(this.docs.bind(this), this.docsLength()));
 	    };
 	    Message.prototype.unpackTo = function (_o) {
 	        _o.updates = this.bb.createObjList(this.updates.bind(this), this.updatesLength());
 	        _o.deletes = this.bb.createObjList(this.deletes.bind(this), this.deletesLength());
 	        _o.customs = this.bb.createObjList(this.customs.bind(this), this.customsLength());
+	        _o.docs = this.bb.createObjList(this.docs.bind(this), this.docsLength());
 	    };
 	    return Message;
 	}();
 	exports.Message = Message;
 	var MessageT = /** @class */function () {
-	    function MessageT(updates, deletes, customs) {
+	    function MessageT(updates, deletes, customs, docs) {
 	        if (updates === void 0) {
 	            updates = [];
 	        }
@@ -3336,15 +3361,20 @@
 	        if (customs === void 0) {
 	            customs = [];
 	        }
+	        if (docs === void 0) {
+	            docs = [];
+	        }
 	        this.updates = updates;
 	        this.deletes = deletes;
 	        this.customs = customs;
+	        this.docs = docs;
 	    }
 	    MessageT.prototype.pack = function (builder) {
 	        var updates = Message.createUpdatesVector(builder, builder.createObjectOffsetList(this.updates));
 	        var deletes = Message.createDeletesVector(builder, builder.createObjectOffsetList(this.deletes));
 	        var customs = Message.createCustomsVector(builder, builder.createObjectOffsetList(this.customs));
-	        return Message.createMessage(builder, updates, deletes, customs);
+	        var docs = Message.createDocsVector(builder, builder.createObjectOffsetList(this.docs));
+	        return Message.createMessage(builder, updates, deletes, customs, docs);
 	    };
 	    return MessageT;
 	}();
@@ -3509,6 +3539,95 @@
 
 /***/ }),
 /* 36 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	"use strict";
+	// automatically generated by the FlatBuffers compiler, do not modify
+
+	exports.__esModule = true;
+	exports.DocOpT = exports.DocOp = void 0;
+	var flatbuffers = __webpack_require__(24);
+	var DocOp = /** @class */function () {
+	    function DocOp() {
+	        this.bb = null;
+	        this.bb_pos = 0;
+	    }
+	    DocOp.prototype.__init = function (i, bb) {
+	        this.bb_pos = i;
+	        this.bb = bb;
+	        return this;
+	    };
+	    DocOp.getRootAsDocOp = function (bb, obj) {
+	        return (obj || new DocOp()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
+	    };
+	    DocOp.getSizePrefixedRootAsDocOp = function (bb, obj) {
+	        bb.setPosition(bb.position() + flatbuffers.SIZE_PREFIX_LENGTH);
+	        return (obj || new DocOp()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
+	    };
+	    DocOp.prototype.update = function (index) {
+	        var offset = this.bb.__offset(this.bb_pos, 4);
+	        return offset ? this.bb.readUint8(this.bb.__vector(this.bb_pos + offset) + index) : 0;
+	    };
+	    DocOp.prototype.updateLength = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 4);
+	        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
+	    };
+	    DocOp.prototype.updateArray = function () {
+	        var offset = this.bb.__offset(this.bb_pos, 4);
+	        return offset ? new Uint8Array(this.bb.bytes().buffer, this.bb.bytes().byteOffset + this.bb.__vector(this.bb_pos + offset), this.bb.__vector_len(this.bb_pos + offset)) : null;
+	    };
+	    DocOp.startDocOp = function (builder) {
+	        builder.startObject(1);
+	    };
+	    DocOp.addUpdate = function (builder, updateOffset) {
+	        builder.addFieldOffset(0, updateOffset, 0);
+	    };
+	    DocOp.createUpdateVector = function (builder, data) {
+	        builder.startVector(1, data.length, 1);
+	        for (var i = data.length - 1; i >= 0; i--) {
+	            builder.addInt8(data[i]);
+	        }
+	        return builder.endVector();
+	    };
+	    DocOp.startUpdateVector = function (builder, numElems) {
+	        builder.startVector(1, numElems, 1);
+	    };
+	    DocOp.endDocOp = function (builder) {
+	        var offset = builder.endObject();
+	        builder.requiredField(offset, 4); // update
+	        return offset;
+	    };
+	    DocOp.createDocOp = function (builder, updateOffset) {
+	        DocOp.startDocOp(builder);
+	        DocOp.addUpdate(builder, updateOffset);
+	        return DocOp.endDocOp(builder);
+	    };
+	    DocOp.prototype.unpack = function () {
+	        return new DocOpT(this.bb.createScalarList(this.update.bind(this), this.updateLength()));
+	    };
+	    DocOp.prototype.unpackTo = function (_o) {
+	        _o.update = this.bb.createScalarList(this.update.bind(this), this.updateLength());
+	    };
+	    return DocOp;
+	}();
+	exports.DocOp = DocOp;
+	var DocOpT = /** @class */function () {
+	    function DocOpT(update) {
+	        if (update === void 0) {
+	            update = [];
+	        }
+	        this.update = update;
+	    }
+	    DocOpT.prototype.pack = function (builder) {
+	        var update = DocOp.createUpdateVector(builder, this.update);
+	        return DocOp.createDocOp(builder, update);
+	    };
+	    return DocOpT;
+	}();
+	exports.DocOpT = DocOpT;
+
+/***/ }),
+/* 37 */
 /***/ (function(module, exports) {
 
 	"use strict";
@@ -3555,7 +3674,7 @@
 	module.exports = AdapterFactory;
 
 /***/ }),
-/* 37 */
+/* 38 */
 /***/ (function(module, exports) {
 
 	'use strict';
@@ -3626,7 +3745,7 @@
 	});
 
 /***/ }),
-/* 38 */
+/* 39 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
@@ -3638,9 +3757,9 @@
 	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
 	/* global AFRAME, NAF, THREE */
-	var flexbuffers = __webpack_require__(39);
+	var flexbuffers = __webpack_require__(40);
 
-	var _require = __webpack_require__(47),
+	var _require = __webpack_require__(48),
 	    Reference = _require.Reference;
 
 	var _require2 = __webpack_require__(30),
@@ -3649,30 +3768,32 @@
 	var _require3 = __webpack_require__(29),
 	    Builder = _require3.Builder;
 
-	var _require4 = __webpack_require__(42),
-	    fromByteWidth = _require4.fromByteWidth;
+	var _require4 = __webpack_require__(27),
+	    Long = _require4.Long;
 
-	var _require5 = __webpack_require__(49),
-	    refCp = _require5.refCp,
-	    refGetNumeric = _require5.refGetNumeric,
-	    refGetInt = _require5.refGetInt,
-	    refGetToObject = _require5.refGetToObject,
-	    refAdvanceToIndexGet = _require5.refAdvanceToIndexGet;
+	var _require5 = __webpack_require__(43),
+	    fromByteWidth = _require5.fromByteWidth;
+
+	var _require6 = __webpack_require__(50),
+	    refCp = _require6.refCp,
+	    refGetNumeric = _require6.refGetNumeric,
+	    refGetInt = _require6.refGetInt,
+	    refGetToObject = _require6.refGetToObject,
+	    refAdvanceToIndexGet = _require6.refAdvanceToIndexGet;
 
 	var uuid = __webpack_require__(8);
-	var deepEqual = __webpack_require__(50);
+	var deepEqual = __webpack_require__(51);
 	var DEG2RAD = THREE.Math.DEG2RAD;
 	var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
 
-	var _require6 = __webpack_require__(51),
-	    Lerper = _require6.Lerper,
-	    TYPE_POSITION = _require6.TYPE_POSITION,
-	    TYPE_QUATERNION = _require6.TYPE_QUATERNION,
-	    TYPE_SCALE = _require6.TYPE_SCALE;
+	var _require7 = __webpack_require__(52),
+	    Lerper = _require7.Lerper,
+	    TYPE_POSITION = _require7.TYPE_POSITION,
+	    TYPE_QUATERNION = _require7.TYPE_QUATERNION,
+	    TYPE_SCALE = _require7.TYPE_SCALE;
 
 	var tmpPosition = new THREE.Vector3();
 	var tmpQuaternion = new THREE.Quaternion();
-	var BASE_OWNER_TIME = 1636600000000;
 
 	var FBMessage = __webpack_require__(33).Message;
 	var FBFullUpdateData = __webpack_require__(23).FullUpdateData;
@@ -3687,6 +3808,7 @@
 	var updateRef = new FBUpdateOp();
 	var deleteRef = new FBDeleteOp();
 	var customRef = new FBCustomOp();
+	var tmpLong = new Long(0, 0);
 
 	var MAX_AWAIT_INSTANTIATION_MS = 10000;
 
@@ -3771,17 +3893,7 @@
 	    // An array of "networked" component instances.
 	    this.components = [];
 
-	    // Incoming messages and flag to determine if incoming message processing should pause
-	    this.incomingData = [];
-	    this.incomingSources = [];
-	    this.incomingSenders = [];
-	    this.incomingPaused = false;
-
-	    // Set of network ids that had a full sync but have not yet shown up in the set of
-	    // entities. This avoids processing any messages until it has been instantiated.
-	    this.instantiatingNetworkIds = new Map();
-
-	    this.nextSyncTime = 0;
+	    this.reset();
 
 	    var running = false;
 
@@ -3790,9 +3902,36 @@
 	      if (running || !NAF.connection.adapter) return;
 
 	      running = true;
+	      var now = performance.now();
 
 	      try {
-	        if (performance.now() < _this.nextSyncTime) return;
+	        if (now < _this.nextSyncTime) return;
+
+	        var _iteratorNormalCompletion = true;
+	        var _didIteratorError = false;
+	        var _iteratorError = undefined;
+
+	        try {
+	          for (var _iterator = _this.components[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+	            var component = _step.value;
+
+	            component.consumeFirstUpdateIfNecessary();
+	          }
+	        } catch (err) {
+	          _didIteratorError = true;
+	          _iteratorError = err;
+	        } finally {
+	          try {
+	            if (!_iteratorNormalCompletion && _iterator.return) {
+	              _iterator.return();
+	            }
+	          } finally {
+	            if (_didIteratorError) {
+	              throw _iteratorError;
+	            }
+	          }
+	        }
+
 	        if (!_this.incomingPaused) _this.performReceiveStep();
 	        _this.performSendStep();
 	      } finally {
@@ -3802,6 +3941,7 @@
 	  },
 	  register: function register(component) {
 	    this.components.push(component);
+	    this.instantiatingNetworkIds.delete(component.data.networkId);
 	  },
 	  deregister: function deregister(component) {
 	    var idx = this.components.indexOf(component);
@@ -3814,6 +3954,20 @@
 	    this.incomingData.push(data);
 	    this.incomingSources.push(source);
 	    this.incomingSenders.push(sender);
+	  },
+	  reset: function reset() {
+	    // Incoming messages and flag to determine if incoming message processing should pause
+	    this.incomingData = [];
+	    this.incomingSources = [];
+	    this.incomingSenders = [];
+	    this.incomingPaused = false;
+
+	    // Set of network ids that had a full sync but have not yet shown up in the set of
+	    // entities. This avoids processing any messages until it has been instantiated.
+	    this.instantiatingNetworkIds = new Map();
+	    this.awaitingPeers = new Map();
+
+	    this.nextSyncTime = 0;
 	  },
 	  performReceiveStep: function performReceiveStep() {
 	    var incomingData = this.incomingData,
@@ -3837,11 +3991,22 @@
 	        var hasInstantiatedEntity = NAF.entities.hasEntity(networkId);
 	        var isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
 
-	        if (hasInstantiatedEntity) {
-	          if (this.instantiatingNetworkIds.size > 0 && this.instantiatingNetworkIds.has(networkId)) {
-	            this.instantiatingNetworkIds.delete(networkId);
+	        if (!hasInstantiatedEntity) {
+	          // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
+	          if (!NAF.connection.activeDataChannels[sender]) {
+	            if (!this.awaitingPeers.has(sender) || now - this.awaitingPeers.get(sender) < MAX_AWAIT_INSTANTIATION_MS) {
+	              if (!this.awaitingPeers.has(sender)) {
+	                this.awaitingPeers.set(sender, performance.now());
+	              }
+
+	              incomingData.push(data);
+	              incomingSources.push(source);
+	              incomingSenders.push(sender);
+	            }
+
+	            continue outer;
 	          }
-	        } else {
+
 	          // Possibly re-queue messages for missing entities, or owners still getting webrtc peer set up
 	          // For persistent missing entities, requeue all messages since scene creates it.
 	          if (isFullSync && fullUpdateDataRef.persistent()) {
@@ -3854,18 +4019,10 @@
 	            var isFirstFullSync = isFullSync && !this.instantiatingNetworkIds.has(networkId);
 
 	            if (isFirstFullSync) {
-	              // If peer is not connected yet for a first sync, requeue.
-	              if (!NAF.connection.activeDataChannels[sender]) {
-	                console.log("not ready");
-	                incomingData.push(data);
-	                incomingSources.push(source);
-	                incomingSenders.push(sender);
-
-	                continue outer;
-	              } else {
-	                // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
-	                this.instantiatingNetworkIds.set(networkId, performance.now());
-	              }
+	              // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
+	              // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
+	              this.awaitingPeers.delete(sender);
+	              this.instantiatingNetworkIds.set(networkId, performance.now());
 	            } else {
 	              // Otherwise re-queue or skip if instantiation never showed up after delay.
 	              //
@@ -3948,7 +4105,9 @@
 	      FBUpdateOp.startUpdateOp(flatbuilder);
 	      FBUpdateOp.addNetworkId(flatbuilder, networkIdOffset);
 	      FBUpdateOp.addOwner(flatbuilder, ownerOffset);
-	      FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME);
+	      tmpLong.low = c.lastOwnerTime & 0x3fffffff;
+	      tmpLong.high = (c.lastOwnerTime - tmpLong.low) / 0x40000000;
+	      FBUpdateOp.addLastOwnerTime(flatbuilder, tmpLong);
 	      FBUpdateOp.addComponents(flatbuilder, componentsOffset);
 
 	      if (fullUpdateDataOffset !== null) {
@@ -4010,6 +4169,8 @@
 	    this.conversionEuler.order = "YXZ";
 	    this.lerpers = [];
 	    this.pendingFullSync = false;
+	    this.lastErrorLoggedAt = 0;
+	    this.pendingConsumeFirstUpdate = false;
 
 	    var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -4048,7 +4209,7 @@
 	    }
 
 	    if (wasCreatedByNetwork) {
-	      this.firstUpdate();
+	      this.pendingConsumeFirstUpdate = true;
 	    } else {
 	      if (this.data.attachTemplateToLocal) {
 	        this.attachTemplateToLocal();
@@ -4120,8 +4281,10 @@
 	    }
 	  },
 
-	  firstUpdate: function firstUpdate() {
+	  consumeFirstUpdateIfNecessary: function consumeFirstUpdateIfNecessary() {
+	    if (!this.pendingConsumeFirstUpdate) return;
 	    this.networkUpdate(this.el.firstUpdateRef, this.data.creator);
+	    this.pendingConsumeFirstUpdate = false;
 	  },
 
 	  onConnected: function onConnected() {
@@ -4258,36 +4421,56 @@
 	            flexbuilder.addFloat(Math.fround(dataToSync.z));
 	          } else {
 	            if ((typeof dataToSync === 'undefined' ? 'undefined' : _typeof(dataToSync)) === 'object') {
-	              if (!aframeSchemaSortedKeys.has(componentName)) {
-	                aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
-	              }
+	              if (dataToSync.isVector2) {
+	                flexbuilder.addInt(0);
+	                flexbuilder.addFloat(Math.fround(dataToSync.x));
+	                flexbuilder.addFloat(Math.fround(dataToSync.y));
+	              } else if (dataToSync.isVector3) {
+	                flexbuilder.addInt(1);
+	                flexbuilder.addFloat(Math.fround(dataToSync.x));
+	                flexbuilder.addFloat(Math.fround(dataToSync.y));
+	                flexbuilder.addFloat(Math.fround(dataToSync.z));
+	              } else if (dataToSync.isQuaternion) {
+	                flexbuilder.addInt(2);
+	                flexbuilder.addFloat(Math.fround(dataToSync.x));
+	                flexbuilder.addFloat(Math.fround(dataToSync.y));
+	                flexbuilder.addFloat(Math.fround(dataToSync.z));
+	                flexbuilder.addFloat(Math.fround(dataToSync.w));
+	              } else {
+	                flexbuilder.addInt(3);
 
-	              var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+	                if (!aframeSchemaSortedKeys.has(componentName)) {
+	                  aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
+	                }
 
-	              for (var j = 0; j <= aframeSchemaKeys.length; j++) {
-	                var key = aframeSchemaKeys[j];
+	                var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-	                if (dataToSync[key] !== undefined) {
-	                  flexbuilder.addInt(j);
+	                for (var j = 0; j <= aframeSchemaKeys.length; j++) {
+	                  var key = aframeSchemaKeys[j];
 
-	                  var value = dataToSync[key];
+	                  if (dataToSync[key] !== undefined) {
+	                    flexbuilder.addInt(j);
 
-	                  if (typeof value === "number") {
-	                    if (Number.isInteger(value)) {
-	                      if (value > 2147483647 || value < -2147483648) {
-	                        NAF.log.error('64 bit integers not supported', value, componentSchema);
+	                    var value = dataToSync[key];
+
+	                    if (typeof value === "number") {
+	                      if (Number.isInteger(value)) {
+	                        if (value > 2147483647 || value < -2147483648) {
+	                          NAF.log.error('64 bit integers not supported', value, componentSchema);
+	                        } else {
+	                          flexbuilder.add(value);
+	                        }
 	                      } else {
-	                        flexbuilder.add(value);
+	                        flexbuilder.add(Math.fround(value));
 	                      }
 	                    } else {
-	                      flexbuilder.add(Math.fround(value));
+	                      flexbuilder.add(value);
 	                    }
-	                  } else {
-	                    flexbuilder.add(value);
 	                  }
 	                }
 	              }
 	            } else {
+	              flexbuilder.addInt(3);
 	              flexbuilder.addInt(0);
 
 	              var _value = dataToSync;
@@ -4362,7 +4545,8 @@
 	      }
 
 	      var entityDataOwner = uuid.stringify(uuidByteBuf);
-	      var entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
+	      var ownerTimeLong = updateRef.lastOwnerTime();
+	      var entityDataLastOwnerTime = ownerTimeLong.high * 0x40000000 + ownerTimeLong.low;
 
 	      // Avoid updating components if the entity data received did not come from the current owner.
 	      if (entityDataLastOwnerTime < this.lastOwnerTime || this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner) {
@@ -4403,7 +4587,12 @@
 
 	      this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
 	    } catch (e) {
-	      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+	      var now = performance.now();
+
+	      if (now - this.lastErrorLoggedAt > 1000) {
+	        this.lastErrorLoggedAt = now;
+	        NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+	      }
 	    }
 	  },
 
@@ -4425,45 +4614,64 @@
 	      var componentName = componentSchema.component ? componentSchema.component : componentSchema;
 
 	      if (!OBJECT3D_COMPONENTS.includes(componentName)) {
-	        if (componentSchema.property) {
-	          // Skip the property index which is always zero for this.
-	          var attributeValue = _defineProperty({}, componentSchema.property, refGetToObject(componentDataRef, 2));
+	        var type = refGetInt(componentDataRef, 1);
 
-	          if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
-	            el.setAttribute(componentName, attributeValue);
+	        if (type !== 3) {
+	          switch (type) {
+	            case 0:
+	              // Vector2
+	              el.setAttribute(componentName, _defineProperty({}, componentSchema.property, new THREE.Vector2(refGetNumeric(componentDataRef, 2) || 0, refGetNumeric(componentDataRef, 3) || 0)));
+	              break;
+	            case 1:
+	              // Vector3
+	              el.setAttribute(componentName, _defineProperty({}, componentSchema.property, new THREE.Vector3(refGetNumeric(componentDataRef, 2) || 0, refGetNumeric(componentDataRef, 3) || 0, refGetNumeric(componentDataRef, 4) || 0)));
+	              break;
+	            case 2:
+	              // Quaternion
+	              el.setAttribute(componentName, _defineProperty({}, componentSchema.property, new THREE.Quaternion(refGetNumeric(componentDataRef, 2) || 0, refGetNumeric(componentDataRef, 3) || 0, refGetNumeric(componentDataRef, 4) || 0, refGetNumeric(componentDataRef, 5) || 0)));
+	              break;
 	          }
 	        } else {
-	          if (!aframeSchemaSortedKeys.has(componentName)) {
-	            var schema = AFRAME.components[componentName].schema;
+	          if (componentSchema.property) {
+	            // Skip the property index which is always zero for this.
+	            var attributeValue = _defineProperty({}, componentSchema.property, refGetToObject(componentDataRef, 3));
 
-	            if (schema.default) {
-	              aframeSchemaSortedKeys.set(componentName, []);
-	            } else {
-	              aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
+	            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
+	              el.setAttribute(componentName, attributeValue);
 	            }
-	          }
+	          } else {
+	            if (!aframeSchemaSortedKeys.has(componentName)) {
+	              var schema = AFRAME.components[componentName].schema;
 
-	          var componentDataLength = componentDataRef.length();
-
-	          if (componentDataLength > 1) {
-	            var _attributeValue2 = {};
-	            var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
-
-	            for (var j = 1; j < componentDataLength; j += 2) {
-	              var key = refGetInt(componentDataRef, j);
-	              var value = refGetToObject(componentDataRef, j + 1);
-
-	              if (aframeSchemaKeys.length === 0) {
-	                // default value case
-	                _attributeValue2 = value;
-	                break;
+	              if (schema.default) {
+	                aframeSchemaSortedKeys.set(componentName, []);
 	              } else {
-	                _attributeValue2[aframeSchemaKeys[key]] = value;
+	                aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
 	              }
 	            }
 
-	            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, _attributeValue2, sender)) {
-	              el.setAttribute(componentName, _attributeValue2);
+	            var componentDataLength = componentDataRef.length();
+
+	            if (componentDataLength > 1) {
+	              var _attributeValue2 = {};
+	              var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+
+	              for (var j = 2; j < componentDataLength; j += 2) {
+	                var key = refGetInt(componentDataRef, j);
+	                var value = refGetToObject(componentDataRef, j + 1);
+
+	                if (aframeSchemaKeys.length === 0) {
+	                  // default value case
+	                  _attributeValue2 = value;
+	                  break;
+	                } else {
+	                  _attributeValue2[aframeSchemaKeys[key]] = value;
+	                }
+	              }
+
+	              if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, _attributeValue2, sender)) {
+	                el.setAttribute(componentName, _attributeValue2);
+	              }
 	            }
 	          }
 	        }
@@ -4555,7 +4763,7 @@
 	});
 
 /***/ }),
-/* 39 */
+/* 40 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -4563,9 +4771,9 @@
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.encode = exports.toObject = exports.builder = exports.toReference = void 0;
 	/* eslint-disable @typescript-eslint/no-namespace */
-	var builder_1 = __webpack_require__(40);
-	var reference_1 = __webpack_require__(47);
-	var reference_2 = __webpack_require__(47);
+	var builder_1 = __webpack_require__(41);
+	var reference_1 = __webpack_require__(48);
+	var reference_2 = __webpack_require__(48);
 	Object.defineProperty(exports, "toReference", { enumerable: true, get: function get() {
 	        return reference_2.toReference;
 	    } });
@@ -4597,7 +4805,7 @@
 	exports.encode = encode;
 
 /***/ }),
-/* 40 */
+/* 41 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -4606,12 +4814,12 @@
 
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.Builder = void 0;
-	var bit_width_1 = __webpack_require__(41);
-	var bit_width_util_1 = __webpack_require__(42);
-	var flexbuffers_util_1 = __webpack_require__(43);
-	var value_type_1 = __webpack_require__(44);
-	var value_type_util_1 = __webpack_require__(45);
-	var stack_value_1 = __webpack_require__(46);
+	var bit_width_1 = __webpack_require__(42);
+	var bit_width_util_1 = __webpack_require__(43);
+	var flexbuffers_util_1 = __webpack_require__(44);
+	var value_type_1 = __webpack_require__(45);
+	var value_type_util_1 = __webpack_require__(46);
+	var stack_value_1 = __webpack_require__(47);
 	var Builder = /** @class */function () {
 	    function Builder(size, dedupStrings, dedupKeys, dedupKeyVectors) {
 	        if (size === void 0) {
@@ -5142,7 +5350,7 @@
 	exports.Builder = Builder;
 
 /***/ }),
-/* 41 */
+/* 42 */
 /***/ (function(module, exports) {
 
 	"use strict";
@@ -5158,14 +5366,14 @@
 	})(BitWidth = exports.BitWidth || (exports.BitWidth = {}));
 
 /***/ }),
-/* 42 */
+/* 43 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.paddingSize = exports.fromByteWidth = exports.uwidth = exports.fwidth = exports.iwidth = exports.toByteWidth = void 0;
-	var bit_width_1 = __webpack_require__(41);
+	var bit_width_1 = __webpack_require__(42);
 	function toByteWidth(bitWidth) {
 	    return 1 << bitWidth;
 	}
@@ -5201,7 +5409,7 @@
 	exports.paddingSize = paddingSize;
 
 /***/ }),
-/* 43 */
+/* 44 */
 /***/ (function(module, exports) {
 
 	"use strict";
@@ -5220,7 +5428,7 @@
 	exports.toUTF8Array = toUTF8Array;
 
 /***/ }),
-/* 44 */
+/* 45 */
 /***/ (function(module, exports) {
 
 	"use strict";
@@ -5260,14 +5468,14 @@
 	})(ValueType = exports.ValueType || (exports.ValueType = {}));
 
 /***/ }),
-/* 45 */
+/* 46 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.packedType = exports.fixedTypedVectorElementSize = exports.fixedTypedVectorElementType = exports.typedVectorElementType = exports.toTypedVector = exports.isAVector = exports.isFixedTypedVector = exports.isTypedVector = exports.isTypedVectorElement = exports.isIndirectNumber = exports.isNumber = exports.isInline = void 0;
-	var value_type_1 = __webpack_require__(44);
+	var value_type_1 = __webpack_require__(45);
 	function isInline(value) {
 	    return value === value_type_1.ValueType.BOOL || value <= value_type_1.ValueType.FLOAT;
 	}
@@ -5323,17 +5531,17 @@
 	exports.packedType = packedType;
 
 /***/ }),
-/* 46 */
+/* 47 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.StackValue = void 0;
-	var bit_width_1 = __webpack_require__(41);
-	var bit_width_util_1 = __webpack_require__(42);
-	var value_type_1 = __webpack_require__(44);
-	var value_type_util_1 = __webpack_require__(45);
+	var bit_width_1 = __webpack_require__(42);
+	var bit_width_util_1 = __webpack_require__(43);
+	var value_type_1 = __webpack_require__(45);
+	var value_type_util_1 = __webpack_require__(46);
 	var StackValue = /** @class */function () {
 	    function StackValue(builder, type, width, value, offset) {
 	        if (value === void 0) {
@@ -5404,19 +5612,19 @@
 	exports.StackValue = StackValue;
 
 /***/ }),
-/* 47 */
+/* 48 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.Reference = exports.toReference = void 0;
-	var bit_width_util_1 = __webpack_require__(42);
-	var value_type_1 = __webpack_require__(44);
-	var value_type_util_1 = __webpack_require__(45);
-	var reference_util_1 = __webpack_require__(48);
-	var flexbuffers_util_1 = __webpack_require__(43);
-	var bit_width_1 = __webpack_require__(41);
+	var bit_width_util_1 = __webpack_require__(43);
+	var value_type_1 = __webpack_require__(45);
+	var value_type_util_1 = __webpack_require__(46);
+	var reference_util_1 = __webpack_require__(49);
+	var flexbuffers_util_1 = __webpack_require__(44);
+	var bit_width_1 = __webpack_require__(42);
 	function toReference(buffer) {
 	    var len = buffer.byteLength;
 	    if (len < 3) {
@@ -5549,7 +5757,7 @@
 	        if ((0, value_type_util_1.isFixedTypedVector)(this.valueType)) {
 	            this._length = (0, value_type_util_1.fixedTypedVectorElementSize)(this.valueType);
 	        } else if (this.valueType === value_type_1.ValueType.BLOB || this.valueType === value_type_1.ValueType.MAP || (0, value_type_util_1.isAVector)(this.valueType)) {
-	            this._length = (0, reference_util_1.readUInt)(this.dataView, (0, reference_util_1.indirect)(this.dataView, this.offset, this.parentWidth) - this.byteWidth, (0, bit_width_util_1.fromByteWidth)(this.byteWidth));
+	            this._length = Number((0, reference_util_1.readUInt)(this.dataView, (0, reference_util_1.indirect)(this.dataView, this.offset, this.parentWidth) - this.byteWidth, (0, bit_width_util_1.fromByteWidth)(this.byteWidth)));
 	        } else if (this.valueType === value_type_1.ValueType.NULL) {
 	            this._length = 0;
 	        } else if (this.valueType === value_type_1.ValueType.STRING) {
@@ -5606,17 +5814,17 @@
 	exports.Reference = Reference;
 
 /***/ }),
-/* 48 */
+/* 49 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
 	Object.defineProperty(exports, "__esModule", { value: true });
 	exports.keyForIndex = exports.valueForIndexWithKey = exports.diffKeys = exports.keyIndex = exports.indirect = exports.readFloat = exports.readUInt = exports.readInt = exports.validateOffset = void 0;
-	var bit_width_1 = __webpack_require__(41);
-	var bit_width_util_1 = __webpack_require__(42);
-	var flexbuffers_util_1 = __webpack_require__(43);
-	var reference_1 = __webpack_require__(47);
+	var bit_width_1 = __webpack_require__(42);
+	var bit_width_util_1 = __webpack_require__(43);
+	var flexbuffers_util_1 = __webpack_require__(44);
+	var reference_1 = __webpack_require__(48);
 	var long_1 = __webpack_require__(27);
 	function validateOffset(dataView, offset, width) {
 	    if (dataView.byteLength <= offset + width || (offset & (0, bit_width_util_1.toByteWidth)(width) - 1) !== 0) {
@@ -5673,7 +5881,7 @@
 	}
 	exports.readFloat = readFloat;
 	function indirect(dataView, offset, width) {
-	    var step = readUInt(dataView, offset, width);
+	    var step = Number(readUInt(dataView, offset, width));
 	    return offset - step;
 	}
 	exports.indirect = indirect;
@@ -5681,8 +5889,8 @@
 	    var input = (0, flexbuffers_util_1.toUTF8Array)(key);
 	    var keysVectorOffset = indirect(dataView, offset, parentWidth) - byteWidth * 3;
 	    var bitWidth = (0, bit_width_util_1.fromByteWidth)(byteWidth);
-	    var indirectOffset = keysVectorOffset - readUInt(dataView, keysVectorOffset, bitWidth);
-	    var _byteWidth = readUInt(dataView, keysVectorOffset + byteWidth, bitWidth);
+	    var indirectOffset = keysVectorOffset - Number(readUInt(dataView, keysVectorOffset, bitWidth));
+	    var _byteWidth = Number(readUInt(dataView, keysVectorOffset + byteWidth, bitWidth));
 	    var low = 0;
 	    var high = length - 1;
 	    while (low <= high) {
@@ -5700,7 +5908,7 @@
 	exports.keyIndex = keyIndex;
 	function diffKeys(input, index, dataView, offset, width) {
 	    var keyOffset = offset + index * width;
-	    var keyIndirectOffset = keyOffset - readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(width));
+	    var keyIndirectOffset = keyOffset - Number(readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(width)));
 	    for (var i = 0; i < input.length; i++) {
 	        var dif = input[i] - dataView.getUint8(keyIndirectOffset + i);
 	        if (dif !== 0) {
@@ -5720,10 +5928,10 @@
 	function keyForIndex(index, dataView, offset, parentWidth, byteWidth) {
 	    var keysVectorOffset = indirect(dataView, offset, parentWidth) - byteWidth * 3;
 	    var bitWidth = (0, bit_width_util_1.fromByteWidth)(byteWidth);
-	    var indirectOffset = keysVectorOffset - readUInt(dataView, keysVectorOffset, bitWidth);
+	    var indirectOffset = keysVectorOffset - Number(readUInt(dataView, keysVectorOffset, bitWidth));
 	    var _byteWidth = readUInt(dataView, keysVectorOffset + byteWidth, bitWidth);
 	    var keyOffset = indirectOffset + index * _byteWidth;
-	    var keyIndirectOffset = keyOffset - readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(_byteWidth));
+	    var keyIndirectOffset = keyOffset - Number(readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(_byteWidth)));
 	    var length = 0;
 	    while (dataView.getUint8(keyIndirectOffset + length) !== 0) {
 	        length++;
@@ -5733,17 +5941,17 @@
 	exports.keyForIndex = keyForIndex;
 
 /***/ }),
-/* 49 */
+/* 50 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
-	var flexbuffers = __webpack_require__(39);
+	var flexbuffers = __webpack_require__(40);
 
-	var _require = __webpack_require__(42),
+	var _require = __webpack_require__(43),
 	    fromByteWidth = _require.fromByteWidth;
 
-	var _require2 = __webpack_require__(45),
+	var _require2 = __webpack_require__(46),
 	    isNumber = _require2.isNumber,
 	    isIndirectNumber = _require2.isIndirectNumber,
 	    isAVector = _require2.isAVector,
@@ -5754,7 +5962,7 @@
 	    packedType = _require2.packedType,
 	    fixedTypedVectorElementType = _require2.fixedTypedVectorElementType;
 
-	var _require3 = __webpack_require__(48),
+	var _require3 = __webpack_require__(49),
 	    indirect = _require3.indirect,
 	    keyForIndex = _require3.keyForIndex,
 	    keyIndex = _require3.keyIndex,
@@ -5763,7 +5971,7 @@
 	    readUInt = _require3.readUInt,
 	    valueForIndexWithKey = _require3.valueForIndexWithKey;
 
-	var _require4 = __webpack_require__(41),
+	var _require4 = __webpack_require__(42),
 	    BitWidth = _require4.BitWidth;
 
 	var tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
@@ -5825,13 +6033,13 @@
 	var refGetInt = function refGetInt(ref, key) {
 	  refCp(ref, tmpRef);
 	  refAdvanceToIndexGet(tmpRef, key);
-	  return tmpRef.intValue();
+	  return Number(tmpRef.intValue());
 	};
 
 	var refGetNumeric = function refGetNumeric(ref, key) {
 	  refCp(ref, tmpRef);
 	  refAdvanceToIndexGet(tmpRef, key);
-	  return tmpRef.numericValue();
+	  return Number(tmpRef.numericValue());
 	};
 
 	var refGetString = function refGetString(ref, key) {
@@ -5854,7 +6062,7 @@
 	  refAdvanceToIndexGet(tmpRef2, key);
 
 	  for (var i = 0; i < 16; i++) {
-	    target[i] = refGetInt(tmpRef2, i);
+	    target[i] = Number(refGetInt(tmpRef2, i));
 	  }
 
 	  return target;
@@ -5863,7 +6071,7 @@
 	module.exports = { refReset: refReset, refAdvanceToIndexGet: refAdvanceToIndexGet, refGetBool: refGetBool, refGetInt: refGetInt, refGetNumeric: refGetNumeric, refGetString: refGetString, refGetUuidBytes: refGetUuidBytes, refCp: refCp, refGetToObject: refGetToObject };
 
 /***/ }),
-/* 50 */
+/* 51 */
 /***/ (function(module, exports) {
 
 	// Patched version of fast-deep-equal which does not
@@ -5927,7 +6135,7 @@
 	};
 
 /***/ }),
-/* 51 */
+/* 52 */
 /***/ (function(module, exports) {
 
 	"use strict";
@@ -6202,7 +6410,7 @@
 	};
 
 /***/ }),
-/* 52 */
+/* 53 */
 /***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
