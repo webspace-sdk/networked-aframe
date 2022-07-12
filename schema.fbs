@@ -24,10 +24,15 @@ table CustomOp {
   payload:string (required);
 }
 
+table DocOp {
+  update:[ubyte] (required);
+}
+
 table Message {
   updates:[UpdateOp];
   deletes:[DeleteOp];
   customs:[CustomOp];
+  docs:[DocOp];
 }
 
 root_type Message;
