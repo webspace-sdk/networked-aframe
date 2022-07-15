@@ -224,8 +224,8 @@ class NetworkConnection {
   }
 
   // Returns true if a new entity was created
-  receivedData(data, source, sender) {
-    AFRAME.scenes[0].systems.networked.enqueueIncoming(data, source, sender);
+  receivedData(data, sender) {
+    AFRAME.scenes[0].systems.networked.enqueueIncoming(data, sender);
   }
 
   getServerTime() {

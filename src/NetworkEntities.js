@@ -63,9 +63,7 @@ class NetworkEntities {
     entity.setAttribute('networked', { template, owner, creator, networkId, persistent });
   }
 
-  updateEntity(updateRef, source, sender) {
-    if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-
+  updateEntity(updateRef, sender) {
     const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
     const networkId = updateRef.networkId();
 
@@ -79,12 +77,7 @@ class NetworkEntities {
       const entity = this.entities[networkId];
       entity.components.networked.networkUpdate(updateRef, sender);
     } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
-      if (NAF.options.firstSyncSource && source !== NAF.options.firstSyncSource) {
-        NAF.log.write('Ignoring first sync from disallowed source', source);
-        return;
-      }
-
-      if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
+      if (NAF.connection.dataAdapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
         this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
       }
     }
@@ -149,15 +142,13 @@ class NetworkEntities {
     }
   }
 
-  removeRemoteEntity(deleteRef, source, sender) {
-    if (NAF.options.syncSource && source !== NAF.options.syncSource) return;
-
+  removeRemoteEntity(deleteRef, sender) {
     const networkId = deleteRef.networkId();
     const entity = this.entities[networkId];
 
     if (!entity) return;
 
-    if (!NAF.connection.adapter.authorizeEntityManipulation(entity, sender)) return;
+    if (!NAF.connection.dataAdapter.authorizeEntityManipulation(entity, sender)) return;
     return this.removeEntity(networkId);
   }
 

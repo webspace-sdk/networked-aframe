@@ -2,6 +2,19 @@ const P2PT = require('./p2pt');
 
 class P2PTAdapter {
   constructor() {
+    this.room = null;
+  }
+
+  setRoom(room) {
+    this.room = room;
+  }
+setDataChannelListeners(onDataChannelOpen, onDataChannelClosed, onReceivedData) {
+    this.onDataChannelOpen = onDataChannelOpen;
+    this.onDataChannelClosed = onDataChannelClosed;
+    this.onReceivedData = onReceivedData;
+  }
+
+  connect() {
     this.p2pt = new P2PT(
       [
       "wss://tracker.files.fm:7073/announce",
@@ -12,41 +25,58 @@ class P2PTAdapter {
       ]
     )
 
-    this.room = null;
-  }
+    this.p2pt.setIdentifier(`_jel_${this.room}`);
 
-  setRoom(room) {
-    this.room = room;
-  }
+    this.p2pt.on('peerconnect', (peer) => {
+      //this.p2pt.send(peer, flatbuilder.asUint8Array());
+      this.onDataChannelOpen(peer.id);
+    });
 
-  setDataChannelListeners(onDataChannelOpen, onDataChannelClosed, onReceivedData) {
-    this.onDataChannelOpen = onDataChannelOpen;
-    this.onDataChannelClosed = onDataChannelClosed;
-    this.onReceivedData = onReceivedData;
-  }
+    this.p2pt.on('peerclose', (peer) => {
+      this.onDataChannelClosed(peer.id);
+    });
 
-  connect() {
-    console.log("connect");
+    this.p2pt.on('msg', (peer, msg) => {
+      this.onReceivedData(msg, peer.id);
+    });
+
+    this.p2pt.start()
   }
 
   disconnect() {
-    console.log("disc");
+    this.p2pt.destroy();
   }
 
   broadcastData(data) {
-    console.log("broad", data);
+    this.p2pt.broadcast(data);
   }
 
   broadcastDataGuaranteed(data) {
-    console.log("broadg", data);
+    this.broadcastData(data);
   }
 
   sendData(data, toClientId) {
-    console.log("send", data);
+    const channels = this.p2pt.peers.get(toClientId);
+    if (!channels) return;
+    const peer = channels.find(p => p.connected);
+    if (!peer) return;
+    this.p2pt.send(peer, data);
   }
 
   sendDataGuaranteed(data, toClientId) {
-    console.log("sendg", data);
+    this.sendData(data, toClientId);
+  }
+
+  authorizeCreateEntity() {
+    return true;
+  }
+
+  authorizeEntityManipulation() {
+    return true;
+  }
+
+  sanitizeComponentValues() {
+    return true;
   }
 }
 

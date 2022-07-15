@@ -117,7 +117,7 @@ AFRAME.registerSystem("networked", {
 
     // Main networking loop, doesn't run on RAF
     setInterval(() => {
-      if (running || !NAF.connection.adapter) return;
+      if (running || !NAF.connection.dataAdapter) return;
 
       running = true;
       const now = performance.now();
@@ -150,16 +150,14 @@ AFRAME.registerSystem("networked", {
     }
   },
 
-  enqueueIncoming(data, source, sender) {
+  enqueueIncoming(data, sender) {
     this.incomingData.push(data);
-    this.incomingSources.push(source);
     this.incomingSenders.push(sender);
   },
 
   reset() {
     // Incoming messages and flag to determine if incoming message processing should pause
     this.incomingData = [];
-    this.incomingSources = [];
     this.incomingSenders = [];
     this.incomingPaused = false;
 
@@ -172,12 +170,11 @@ AFRAME.registerSystem("networked", {
   },
 
   performReceiveStep() {
-    const { incomingData, incomingSources, incomingSenders } = this;
+    const { incomingData, incomingSenders } = this;
 
     outer:
     for (let i = 0, l = incomingData.length; i < l; i++) {
       const data = incomingData.shift();
-      const source = incomingSources.shift();
       const sender = incomingSenders.shift();
 
       FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef);
@@ -200,7 +197,6 @@ AFRAME.registerSystem("networked", {
               }
 
               incomingData.push(data);
-              incomingSources.push(source);
               incomingSenders.push(sender);
             }
 
@@ -211,7 +207,6 @@ AFRAME.registerSystem("networked", {
           // For persistent missing entities, requeue all messages since scene creates it.
           if (isFullSync && fullUpdateDataRef.persistent()) {
             incomingData.push(data);
-            incomingSources.push(source);
             incomingSenders.push(sender);
             continue outer;
           } else {
@@ -230,7 +225,6 @@ AFRAME.registerSystem("networked", {
               if (!this.instantiatingNetworkIds.has(networkId) ||
                 now - this.instantiatingNetworkIds.get(networkId) < MAX_AWAIT_INSTANTIATION_MS) {
                 incomingData.push(data);
-                incomingSources.push(source);
                 incomingSenders.push(sender);
               }
 
@@ -242,12 +236,12 @@ AFRAME.registerSystem("networked", {
 
       for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
         messageRef.updates(i, updateRef);
-        NAF.entities.updateEntity(updateRef, source, sender)
+        NAF.entities.updateEntity(updateRef, sender)
       }
 
       for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
         messageRef.deletes(i, deleteRef);
-        NAF.entities.removeRemoteEntity(deleteRef, source, sender);
+        NAF.entities.removeRemoteEntity(deleteRef, sender);
       }
 
       for (let i = 0, l = messageRef.customsLength(); i < l; i++) {
@@ -845,7 +839,7 @@ AFRAME.registerComponent('networked', {
             // Skip the property index which is always zero for this.
             const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 3) };
 
-            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+            if (NAF.connection.dataAdapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
               el.setAttribute(componentName, attributeValue);
             }
           } else {
@@ -878,14 +872,14 @@ AFRAME.registerComponent('networked', {
                 }
               }
 
-              if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+              if (NAF.connection.dataAdapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
                 el.setAttribute(componentName, attributeValue);
               }
             }
           }
         }
       } else {
-        if (NAF.connection.adapter.authorizeEntityManipulation(this.el, sender)) {
+        if (NAF.connection.dataAdapter.authorizeEntityManipulation(this.el, sender)) {
           const x = refGetNumeric(componentDataRef, 1) || 0;
           const y = refGetNumeric(componentDataRef, 2) || 0;
           const z = refGetNumeric(componentDataRef, 3) || 0;
