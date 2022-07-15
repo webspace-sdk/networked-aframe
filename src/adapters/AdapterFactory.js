@@ -1,6 +1,8 @@
+const P2PTAdapter = require("./P2PTAdapter");
+
 class AdapterFactory {
   constructor() {
-    this.adapters = { };
+    this.adapters = { p2pt: P2PTAdapter };
     this.IS_CONNECTED = AdapterFactory.IS_CONNECTED;
     this.CONNECTING = AdapterFactory.CONNECTING;
     this.NOT_CONNECTED = AdapterFactory.NOT_CONNECTED;

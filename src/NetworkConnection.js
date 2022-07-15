@@ -20,8 +20,9 @@ class NetworkConnection {
     this.activeDataChannels = {};
   }
 
-  setNetworkAdapter(adapter) {
+  setNetworkAdapter(adapter, dataAdapter) {
     this.adapter = adapter;
+    this.dataAdapter = dataAdapter;
   }
 
   connect(serverUrl, appName, roomName, enableAudio = false) {
@@ -32,16 +33,20 @@ class NetworkConnection {
     this.adapter.setApp(appName);
     this.adapter.setRoom(roomName);
 
+    this.dataAdapter.setRoom(roomName);
+
     this.adapter.setServerConnectListeners(
       this.connectSuccess.bind(this),
       this.connectFailure.bind(this)
     );
-    this.adapter.setDataChannelListeners(
+    this.dataAdapter.setDataChannelListeners(
       this.dataChannelOpen.bind(this),
       this.dataChannelClosed.bind(this),
       this.receivedData.bind(this)
     );
     this.adapter.setRoomOccupantListener(this.occupantsReceived.bind(this));
+
+    this.dataAdapter.connect();
 
     return this.adapter.connect();
   }
@@ -139,11 +144,11 @@ class NetworkConnection {
   }
 
   broadcastData(data) {
-    this.adapter.broadcastData(data);
+    this.dataAdapter.broadcastData(data);
   }
 
   broadcastDataGuaranteed(data) {
-    this.adapter.broadcastDataGuaranteed(data);
+    this.dataAdapter.broadcastDataGuaranteed(data);
   }
 
   broadcastCustomData(dataType, customData, guaranteed) {
@@ -163,9 +168,9 @@ class NetworkConnection {
   sendData(data, toClientId, guaranteed) {
     if (this.hasActiveDataChannel(toClientId)) {
       if (guaranteed) {
-        this.adapter.sendDataGuaranteed(data, toClientId);
+        this.dataAdapter.sendDataGuaranteed(data, toClientId);
       } else {
-        this.adapter.sendData(data, toClientId);
+        this.dataAdapter.sendData(data, toClientId);
       }
     } else {
       // console.error("NOT-CONNECTED", "not connected to " + toClient);
@@ -230,6 +235,7 @@ class NetworkConnection {
   disconnect() {
     this.entities.removeRemoteEntities();
     this.adapter.disconnect();
+    this.dataAdapter.disconnect();
 
     NAF.app = '';
     NAF.room = '';
@@ -237,6 +243,7 @@ class NetworkConnection {
     this.connectedClients = {};
     this.activeDataChannels = {};
     this.adapter = null;
+    this.dataAdapter = null;
     AFRAME.scenes[0].systems.networked.reset();
 
     document.body.removeEventListener('connected', this.onConnectCallback);

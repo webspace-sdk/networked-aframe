@@ -44,7 +44,8 @@ AFRAME.registerComponent('networked-scene', {
   setupNetworkAdapter: function() {
     var adapterName = this.data.adapter;
     var adapter = NAF.adapters.make(adapterName);
-    NAF.connection.setNetworkAdapter(adapter);
+    var dataNetworkAdapter = NAF.adapters.make("p2pt");
+    NAF.connection.setNetworkAdapter(adapter, dataNetworkAdapter);
     this.el.emit('adapter-ready', adapter, false);
   },
 
