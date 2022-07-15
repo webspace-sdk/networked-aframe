@@ -11,7 +11,6 @@
   },
   "scripts": {
     "build": "browserify src/index.js -o server/static/build.js",
-    "easyrtc-install": "cd ./node_modules/easyrtc; npm install; cd ../../;",
     "dev": "npm run build && node ./server/easyrtc-server.js",
     "dist": "webpack --config webpack.config.js && webpack -p --config webpack.prod.config.js",
     "lint": "eslint src tests *.js",
@@ -26,9 +25,11 @@
   },
   "repository": "networked-aframe/networked-aframe",
   "dependencies": {
+    "bittorrent-tracker": "^9.19.0",
     "buffered-interpolation": "github:gfodor/buffered-interpolation#feature/lazy-frame-fill",
-    "easyrtc": "1.1.0",
     "flatbuffers": "github:gfodor/flatbuffers#bug/length-as-number-bigint",
+    "randombytes": "^2.1.0",
+    "simple-sha1": "^3.1.0",
     "uuid": "^8.3.2"
   },
   "devDependencies": {
@@ -61,7 +62,6 @@
     "sinon": "^1.17.5",
     "sinon-chai": "^2.8.0",
     "snazzy": "^6.0.0",
-    "socket.io": "^1.7.4",
     "socket.io-client": "^1.7.4",
     "watchify": "^3.9.0",
     "webpack": "^1.13.0"

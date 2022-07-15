@@ -2800,7 +2800,7 @@
 	    };
 	    UpdateOp.prototype.lastOwnerTime = function () {
 	        var offset = this.bb.__offset(this.bb_pos, 10);
-	        return offset ? this.bb.readUint32(this.bb_pos + offset) : 0;
+	        return offset ? this.bb.readUint64(this.bb_pos + offset) : this.bb.createLong(0, 0);
 	    };
 	    UpdateOp.prototype.components = function (index) {
 	        var offset = this.bb.__offset(this.bb_pos, 12);
@@ -2837,7 +2837,7 @@
 	        builder.startVector(1, numElems, 1);
 	    };
 	    UpdateOp.addLastOwnerTime = function (builder, lastOwnerTime) {
-	        builder.addFieldInt32(3, lastOwnerTime, 0);
+	        builder.addFieldInt64(3, lastOwnerTime, builder.createLong(0, 0));
 	    };
 	    UpdateOp.addComponents = function (builder, componentsOffset) {
 	        builder.addFieldOffset(4, componentsOffset, 0);
@@ -2883,7 +2883,7 @@
 	            owner = [];
 	        }
 	        if (lastOwnerTime === void 0) {
-	            lastOwnerTime = 0;
+	            lastOwnerTime = flatbuffers.createLong(0, 0);
 	        }
 	        if (components === void 0) {
 	            components = [];
@@ -3191,6 +3191,7 @@
 	      this.connectedClients = {};
 	      this.activeDataChannels = {};
 	      this.adapter = null;
+	      AFRAME.scenes[0].systems.networked.reset();
 
 	      document.body.removeEventListener('connected', this.onConnectCallback);
 	    }
@@ -3649,30 +3650,32 @@
 	var _require3 = __webpack_require__(29),
 	    Builder = _require3.Builder;
 
-	var _require4 = __webpack_require__(42),
-	    fromByteWidth = _require4.fromByteWidth;
+	var _require4 = __webpack_require__(27),
+	    Long = _require4.Long;
 
-	var _require5 = __webpack_require__(49),
-	    refCp = _require5.refCp,
-	    refGetNumeric = _require5.refGetNumeric,
-	    refGetInt = _require5.refGetInt,
-	    refGetToObject = _require5.refGetToObject,
-	    refAdvanceToIndexGet = _require5.refAdvanceToIndexGet;
+	var _require5 = __webpack_require__(42),
+	    fromByteWidth = _require5.fromByteWidth;
+
+	var _require6 = __webpack_require__(49),
+	    refCp = _require6.refCp,
+	    refGetNumeric = _require6.refGetNumeric,
+	    refGetInt = _require6.refGetInt,
+	    refGetToObject = _require6.refGetToObject,
+	    refAdvanceToIndexGet = _require6.refAdvanceToIndexGet;
 
 	var uuid = __webpack_require__(8);
 	var deepEqual = __webpack_require__(50);
 	var DEG2RAD = THREE.Math.DEG2RAD;
 	var OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
 
-	var _require6 = __webpack_require__(51),
-	    Lerper = _require6.Lerper,
-	    TYPE_POSITION = _require6.TYPE_POSITION,
-	    TYPE_QUATERNION = _require6.TYPE_QUATERNION,
-	    TYPE_SCALE = _require6.TYPE_SCALE;
+	var _require7 = __webpack_require__(51),
+	    Lerper = _require7.Lerper,
+	    TYPE_POSITION = _require7.TYPE_POSITION,
+	    TYPE_QUATERNION = _require7.TYPE_QUATERNION,
+	    TYPE_SCALE = _require7.TYPE_SCALE;
 
 	var tmpPosition = new THREE.Vector3();
 	var tmpQuaternion = new THREE.Quaternion();
-	var BASE_OWNER_TIME = 1636600000000;
 
 	var FBMessage = __webpack_require__(33).Message;
 	var FBFullUpdateData = __webpack_require__(23).FullUpdateData;
@@ -3687,6 +3690,7 @@
 	var updateRef = new FBUpdateOp();
 	var deleteRef = new FBDeleteOp();
 	var customRef = new FBCustomOp();
+	var tmpLong = new Long(0, 0);
 
 	var MAX_AWAIT_INSTANTIATION_MS = 10000;
 
@@ -3771,17 +3775,7 @@
 	    // An array of "networked" component instances.
 	    this.components = [];
 
-	    // Incoming messages and flag to determine if incoming message processing should pause
-	    this.incomingData = [];
-	    this.incomingSources = [];
-	    this.incomingSenders = [];
-	    this.incomingPaused = false;
-
-	    // Set of network ids that had a full sync but have not yet shown up in the set of
-	    // entities. This avoids processing any messages until it has been instantiated.
-	    this.instantiatingNetworkIds = new Map();
-
-	    this.nextSyncTime = 0;
+	    this.reset();
 
 	    var running = false;
 
@@ -3790,9 +3784,36 @@
 	      if (running || !NAF.connection.adapter) return;
 
 	      running = true;
+	      var now = performance.now();
 
 	      try {
-	        if (performance.now() < _this.nextSyncTime) return;
+	        if (now < _this.nextSyncTime) return;
+
+	        var _iteratorNormalCompletion = true;
+	        var _didIteratorError = false;
+	        var _iteratorError = undefined;
+
+	        try {
+	          for (var _iterator = _this.components[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+	            var component = _step.value;
+
+	            component.consumeFirstUpdateIfNecessary();
+	          }
+	        } catch (err) {
+	          _didIteratorError = true;
+	          _iteratorError = err;
+	        } finally {
+	          try {
+	            if (!_iteratorNormalCompletion && _iterator.return) {
+	              _iterator.return();
+	            }
+	          } finally {
+	            if (_didIteratorError) {
+	              throw _iteratorError;
+	            }
+	          }
+	        }
+
 	        if (!_this.incomingPaused) _this.performReceiveStep();
 	        _this.performSendStep();
 	      } finally {
@@ -3802,6 +3823,7 @@
 	  },
 	  register: function register(component) {
 	    this.components.push(component);
+	    this.instantiatingNetworkIds.delete(component.data.networkId);
 	  },
 	  deregister: function deregister(component) {
 	    var idx = this.components.indexOf(component);
@@ -3814,6 +3836,20 @@
 	    this.incomingData.push(data);
 	    this.incomingSources.push(source);
 	    this.incomingSenders.push(sender);
+	  },
+	  reset: function reset() {
+	    // Incoming messages and flag to determine if incoming message processing should pause
+	    this.incomingData = [];
+	    this.incomingSources = [];
+	    this.incomingSenders = [];
+	    this.incomingPaused = false;
+
+	    // Set of network ids that had a full sync but have not yet shown up in the set of
+	    // entities. This avoids processing any messages until it has been instantiated.
+	    this.instantiatingNetworkIds = new Map();
+	    this.awaitingPeers = new Map();
+
+	    this.nextSyncTime = 0;
 	  },
 	  performReceiveStep: function performReceiveStep() {
 	    var incomingData = this.incomingData,
@@ -3837,11 +3873,22 @@
 	        var hasInstantiatedEntity = NAF.entities.hasEntity(networkId);
 	        var isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
 
-	        if (hasInstantiatedEntity) {
-	          if (this.instantiatingNetworkIds.size > 0 && this.instantiatingNetworkIds.has(networkId)) {
-	            this.instantiatingNetworkIds.delete(networkId);
+	        if (!hasInstantiatedEntity) {
+	          // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
+	          if (!NAF.connection.activeDataChannels[sender]) {
+	            if (!this.awaitingPeers.has(sender) || now - this.awaitingPeers.get(sender) < MAX_AWAIT_INSTANTIATION_MS) {
+	              if (!this.awaitingPeers.has(sender)) {
+	                this.awaitingPeers.set(sender, performance.now());
+	              }
+
+	              incomingData.push(data);
+	              incomingSources.push(source);
+	              incomingSenders.push(sender);
+	            }
+
+	            continue outer;
 	          }
-	        } else {
+
 	          // Possibly re-queue messages for missing entities, or owners still getting webrtc peer set up
 	          // For persistent missing entities, requeue all messages since scene creates it.
 	          if (isFullSync && fullUpdateDataRef.persistent()) {
@@ -3854,18 +3901,10 @@
 	            var isFirstFullSync = isFullSync && !this.instantiatingNetworkIds.has(networkId);
 
 	            if (isFirstFullSync) {
-	              // If peer is not connected yet for a first sync, requeue.
-	              if (!NAF.connection.activeDataChannels[sender]) {
-	                console.log("not ready");
-	                incomingData.push(data);
-	                incomingSources.push(source);
-	                incomingSenders.push(sender);
-
-	                continue outer;
-	              } else {
-	                // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
-	                this.instantiatingNetworkIds.set(networkId, performance.now());
-	              }
+	              // If rtc peer is not connected yet for a first sync, requeue for MAX_AWAIT_INSTANTIATION_MS.
+	              // Mark entity as instantiating and process it so we don't consume subsequent first syncs.
+	              this.awaitingPeers.delete(sender);
+	              this.instantiatingNetworkIds.set(networkId, performance.now());
 	            } else {
 	              // Otherwise re-queue or skip if instantiation never showed up after delay.
 	              //
@@ -3948,7 +3987,9 @@
 	      FBUpdateOp.startUpdateOp(flatbuilder);
 	      FBUpdateOp.addNetworkId(flatbuilder, networkIdOffset);
 	      FBUpdateOp.addOwner(flatbuilder, ownerOffset);
-	      FBUpdateOp.addLastOwnerTime(flatbuilder, c.lastOwnerTime - BASE_OWNER_TIME);
+	      tmpLong.low = c.lastOwnerTime & 0x3fffffff;
+	      tmpLong.high = (c.lastOwnerTime - tmpLong.low) / 0x40000000;
+	      FBUpdateOp.addLastOwnerTime(flatbuilder, tmpLong);
 	      FBUpdateOp.addComponents(flatbuilder, componentsOffset);
 
 	      if (fullUpdateDataOffset !== null) {
@@ -4010,6 +4051,8 @@
 	    this.conversionEuler.order = "YXZ";
 	    this.lerpers = [];
 	    this.pendingFullSync = false;
+	    this.lastErrorLoggedAt = 0;
+	    this.pendingConsumeFirstUpdate = false;
 
 	    var wasCreatedByNetwork = this.wasCreatedByNetwork();
 
@@ -4048,7 +4091,7 @@
 	    }
 
 	    if (wasCreatedByNetwork) {
-	      this.firstUpdate();
+	      this.pendingConsumeFirstUpdate = true;
 	    } else {
 	      if (this.data.attachTemplateToLocal) {
 	        this.attachTemplateToLocal();
@@ -4120,8 +4163,10 @@
 	    }
 	  },
 
-	  firstUpdate: function firstUpdate() {
+	  consumeFirstUpdateIfNecessary: function consumeFirstUpdateIfNecessary() {
+	    if (!this.pendingConsumeFirstUpdate) return;
 	    this.networkUpdate(this.el.firstUpdateRef, this.data.creator);
+	    this.pendingConsumeFirstUpdate = false;
 	  },
 
 	  onConnected: function onConnected() {
@@ -4258,36 +4303,56 @@
 	            flexbuilder.addFloat(Math.fround(dataToSync.z));
 	          } else {
 	            if ((typeof dataToSync === 'undefined' ? 'undefined' : _typeof(dataToSync)) === 'object') {
-	              if (!aframeSchemaSortedKeys.has(componentName)) {
-	                aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
-	              }
+	              if (dataToSync.isVector2) {
+	                flexbuilder.addInt(0);
+	                flexbuilder.addFloat(Math.fround(dataToSync.x));
+	                flexbuilder.addFloat(Math.fround(dataToSync.y));
+	              } else if (dataToSync.isVector3) {
+	                flexbuilder.addInt(1);
+	                flexbuilder.addFloat(Math.fround(dataToSync.x));
+	                flexbuilder.addFloat(Math.fround(dataToSync.y));
+	                flexbuilder.addFloat(Math.fround(dataToSync.z));
+	              } else if (dataToSync.isQuaternion) {
+	                flexbuilder.addInt(2);
+	                flexbuilder.addFloat(Math.fround(dataToSync.x));
+	                flexbuilder.addFloat(Math.fround(dataToSync.y));
+	                flexbuilder.addFloat(Math.fround(dataToSync.z));
+	                flexbuilder.addFloat(Math.fround(dataToSync.w));
+	              } else {
+	                flexbuilder.addInt(3);
 
-	              var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+	                if (!aframeSchemaSortedKeys.has(componentName)) {
+	                  aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
+	                }
 
-	              for (var j = 0; j <= aframeSchemaKeys.length; j++) {
-	                var key = aframeSchemaKeys[j];
+	                var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
 
-	                if (dataToSync[key] !== undefined) {
-	                  flexbuilder.addInt(j);
+	                for (var j = 0; j <= aframeSchemaKeys.length; j++) {
+	                  var key = aframeSchemaKeys[j];
 
-	                  var value = dataToSync[key];
+	                  if (dataToSync[key] !== undefined) {
+	                    flexbuilder.addInt(j);
 
-	                  if (typeof value === "number") {
-	                    if (Number.isInteger(value)) {
-	                      if (value > 2147483647 || value < -2147483648) {
-	                        NAF.log.error('64 bit integers not supported', value, componentSchema);
+	                    var value = dataToSync[key];
+
+	                    if (typeof value === "number") {
+	                      if (Number.isInteger(value)) {
+	                        if (value > 2147483647 || value < -2147483648) {
+	                          NAF.log.error('64 bit integers not supported', value, componentSchema);
+	                        } else {
+	                          flexbuilder.add(value);
+	                        }
 	                      } else {
-	                        flexbuilder.add(value);
+	                        flexbuilder.add(Math.fround(value));
 	                      }
 	                    } else {
-	                      flexbuilder.add(Math.fround(value));
+	                      flexbuilder.add(value);
 	                    }
-	                  } else {
-	                    flexbuilder.add(value);
 	                  }
 	                }
 	              }
 	            } else {
+	              flexbuilder.addInt(3);
 	              flexbuilder.addInt(0);
 
 	              var _value = dataToSync;
@@ -4362,7 +4427,8 @@
 	      }
 
 	      var entityDataOwner = uuid.stringify(uuidByteBuf);
-	      var entityDataLastOwnerTime = updateRef.lastOwnerTime() + BASE_OWNER_TIME;
+	      var ownerTimeLong = updateRef.lastOwnerTime();
+	      var entityDataLastOwnerTime = ownerTimeLong.high * 0x40000000 + ownerTimeLong.low;
 
 	      // Avoid updating components if the entity data received did not come from the current owner.
 	      if (entityDataLastOwnerTime < this.lastOwnerTime || this.lastOwnerTime === entityDataLastOwnerTime && this.data.owner > entityDataOwner) {
@@ -4403,7 +4469,12 @@
 
 	      this.updateNetworkedComponents(entityDataRef, isFullSync, sender);
 	    } catch (e) {
-	      NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+	      var now = performance.now();
+
+	      if (now - this.lastErrorLoggedAt > 1000) {
+	        this.lastErrorLoggedAt = now;
+	        NAF.log.error('Error updating from network', sender, updateRef && updateRef.bb && updateRef.bb.bytes, e);
+	      }
 	    }
 	  },
 
@@ -4425,45 +4496,64 @@
 	      var componentName = componentSchema.component ? componentSchema.component : componentSchema;
 
 	      if (!OBJECT3D_COMPONENTS.includes(componentName)) {
-	        if (componentSchema.property) {
-	          // Skip the property index which is always zero for this.
-	          var attributeValue = _defineProperty({}, componentSchema.property, refGetToObject(componentDataRef, 2));
+	        var type = refGetInt(componentDataRef, 1);
 
-	          if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
-	            el.setAttribute(componentName, attributeValue);
+	        if (type !== 3) {
+	          switch (type) {
+	            case 0:
+	              // Vector2
+	              el.setAttribute(componentName, _defineProperty({}, componentSchema.property, new THREE.Vector2(refGetNumeric(componentDataRef, 2) || 0, refGetNumeric(componentDataRef, 3) || 0)));
+	              break;
+	            case 1:
+	              // Vector3
+	              el.setAttribute(componentName, _defineProperty({}, componentSchema.property, new THREE.Vector3(refGetNumeric(componentDataRef, 2) || 0, refGetNumeric(componentDataRef, 3) || 0, refGetNumeric(componentDataRef, 4) || 0)));
+	              break;
+	            case 2:
+	              // Quaternion
+	              el.setAttribute(componentName, _defineProperty({}, componentSchema.property, new THREE.Quaternion(refGetNumeric(componentDataRef, 2) || 0, refGetNumeric(componentDataRef, 3) || 0, refGetNumeric(componentDataRef, 4) || 0, refGetNumeric(componentDataRef, 5) || 0)));
+	              break;
 	          }
 	        } else {
-	          if (!aframeSchemaSortedKeys.has(componentName)) {
-	            var schema = AFRAME.components[componentName].schema;
+	          if (componentSchema.property) {
+	            // Skip the property index which is always zero for this.
+	            var attributeValue = _defineProperty({}, componentSchema.property, refGetToObject(componentDataRef, 3));
 
-	            if (schema.default) {
-	              aframeSchemaSortedKeys.set(componentName, []);
-	            } else {
-	              aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
+	            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
+	              el.setAttribute(componentName, attributeValue);
 	            }
-	          }
+	          } else {
+	            if (!aframeSchemaSortedKeys.has(componentName)) {
+	              var schema = AFRAME.components[componentName].schema;
 
-	          var componentDataLength = componentDataRef.length();
-
-	          if (componentDataLength > 1) {
-	            var _attributeValue2 = {};
-	            var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
-
-	            for (var j = 1; j < componentDataLength; j += 2) {
-	              var key = refGetInt(componentDataRef, j);
-	              var value = refGetToObject(componentDataRef, j + 1);
-
-	              if (aframeSchemaKeys.length === 0) {
-	                // default value case
-	                _attributeValue2 = value;
-	                break;
+	              if (schema.default) {
+	                aframeSchemaSortedKeys.set(componentName, []);
 	              } else {
-	                _attributeValue2[aframeSchemaKeys[key]] = value;
+	                aframeSchemaSortedKeys.set(componentName, [].concat(_toConsumableArray(Object.keys(AFRAME.components[componentName].schema))).sort());
 	              }
 	            }
 
-	            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, _attributeValue2, sender)) {
-	              el.setAttribute(componentName, _attributeValue2);
+	            var componentDataLength = componentDataRef.length();
+
+	            if (componentDataLength > 1) {
+	              var _attributeValue2 = {};
+	              var aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName);
+
+	              for (var j = 2; j < componentDataLength; j += 2) {
+	                var key = refGetInt(componentDataRef, j);
+	                var value = refGetToObject(componentDataRef, j + 1);
+
+	                if (aframeSchemaKeys.length === 0) {
+	                  // default value case
+	                  _attributeValue2 = value;
+	                  break;
+	                } else {
+	                  _attributeValue2[aframeSchemaKeys[key]] = value;
+	                }
+	              }
+
+	              if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, _attributeValue2, sender)) {
+	                el.setAttribute(componentName, _attributeValue2);
+	              }
 	            }
 	          }
 	        }
@@ -5549,7 +5639,7 @@
 	        if ((0, value_type_util_1.isFixedTypedVector)(this.valueType)) {
 	            this._length = (0, value_type_util_1.fixedTypedVectorElementSize)(this.valueType);
 	        } else if (this.valueType === value_type_1.ValueType.BLOB || this.valueType === value_type_1.ValueType.MAP || (0, value_type_util_1.isAVector)(this.valueType)) {
-	            this._length = (0, reference_util_1.readUInt)(this.dataView, (0, reference_util_1.indirect)(this.dataView, this.offset, this.parentWidth) - this.byteWidth, (0, bit_width_util_1.fromByteWidth)(this.byteWidth));
+	            this._length = Number((0, reference_util_1.readUInt)(this.dataView, (0, reference_util_1.indirect)(this.dataView, this.offset, this.parentWidth) - this.byteWidth, (0, bit_width_util_1.fromByteWidth)(this.byteWidth)));
 	        } else if (this.valueType === value_type_1.ValueType.NULL) {
 	            this._length = 0;
 	        } else if (this.valueType === value_type_1.ValueType.STRING) {
@@ -5673,7 +5763,7 @@
 	}
 	exports.readFloat = readFloat;
 	function indirect(dataView, offset, width) {
-	    var step = readUInt(dataView, offset, width);
+	    var step = Number(readUInt(dataView, offset, width));
 	    return offset - step;
 	}
 	exports.indirect = indirect;
@@ -5681,8 +5771,8 @@
 	    var input = (0, flexbuffers_util_1.toUTF8Array)(key);
 	    var keysVectorOffset = indirect(dataView, offset, parentWidth) - byteWidth * 3;
 	    var bitWidth = (0, bit_width_util_1.fromByteWidth)(byteWidth);
-	    var indirectOffset = keysVectorOffset - readUInt(dataView, keysVectorOffset, bitWidth);
-	    var _byteWidth = readUInt(dataView, keysVectorOffset + byteWidth, bitWidth);
+	    var indirectOffset = keysVectorOffset - Number(readUInt(dataView, keysVectorOffset, bitWidth));
+	    var _byteWidth = Number(readUInt(dataView, keysVectorOffset + byteWidth, bitWidth));
 	    var low = 0;
 	    var high = length - 1;
 	    while (low <= high) {
@@ -5700,7 +5790,7 @@
 	exports.keyIndex = keyIndex;
 	function diffKeys(input, index, dataView, offset, width) {
 	    var keyOffset = offset + index * width;
-	    var keyIndirectOffset = keyOffset - readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(width));
+	    var keyIndirectOffset = keyOffset - Number(readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(width)));
 	    for (var i = 0; i < input.length; i++) {
 	        var dif = input[i] - dataView.getUint8(keyIndirectOffset + i);
 	        if (dif !== 0) {
@@ -5720,10 +5810,10 @@
 	function keyForIndex(index, dataView, offset, parentWidth, byteWidth) {
 	    var keysVectorOffset = indirect(dataView, offset, parentWidth) - byteWidth * 3;
 	    var bitWidth = (0, bit_width_util_1.fromByteWidth)(byteWidth);
-	    var indirectOffset = keysVectorOffset - readUInt(dataView, keysVectorOffset, bitWidth);
+	    var indirectOffset = keysVectorOffset - Number(readUInt(dataView, keysVectorOffset, bitWidth));
 	    var _byteWidth = readUInt(dataView, keysVectorOffset + byteWidth, bitWidth);
 	    var keyOffset = indirectOffset + index * _byteWidth;
-	    var keyIndirectOffset = keyOffset - readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(_byteWidth));
+	    var keyIndirectOffset = keyOffset - Number(readUInt(dataView, keyOffset, (0, bit_width_util_1.fromByteWidth)(_byteWidth)));
 	    var length = 0;
 	    while (dataView.getUint8(keyIndirectOffset + length) !== 0) {
 	        length++;
@@ -5825,13 +5915,13 @@
 	var refGetInt = function refGetInt(ref, key) {
 	  refCp(ref, tmpRef);
 	  refAdvanceToIndexGet(tmpRef, key);
-	  return tmpRef.intValue();
+	  return Number(tmpRef.intValue());
 	};
 
 	var refGetNumeric = function refGetNumeric(ref, key) {
 	  refCp(ref, tmpRef);
 	  refAdvanceToIndexGet(tmpRef, key);
-	  return tmpRef.numericValue();
+	  return Number(tmpRef.numericValue());
 	};
 
 	var refGetString = function refGetString(ref, key) {
@@ -5854,7 +5944,7 @@
 	  refAdvanceToIndexGet(tmpRef2, key);
 
 	  for (var i = 0; i < 16; i++) {
-	    target[i] = refGetInt(tmpRef2, i);
+	    target[i] = Number(refGetInt(tmpRef2, i));
 	  }
 
 	  return target;
