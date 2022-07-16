@@ -77,7 +77,7 @@ class NetworkEntities {
       const entity = this.entities[networkId];
       entity.components.networked.networkUpdate(updateRef, sender);
     } else if (isFullSync && NAF.connection.activeDataChannels[owner] !== false) {
-      if (NAF.connection.dataAdapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
+      if (NAF.connection.adapter.authorizeCreateEntity(fullUpdateDataRef.template(), sender)) {
         this.receiveFirstUpdateFromEntity(updateRef, fullUpdateDataRef);
       }
     }
@@ -148,7 +148,7 @@ class NetworkEntities {
 
     if (!entity) return;
 
-    if (!NAF.connection.dataAdapter.authorizeEntityManipulation(entity, sender)) return;
+    if (!NAF.connection.adapter.authorizeEntityManipulation(entity, sender)) return;
     return this.removeEntity(networkId);
   }
 

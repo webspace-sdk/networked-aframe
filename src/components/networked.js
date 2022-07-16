@@ -88,7 +88,7 @@ AFRAME.registerSystem("networked", {
 
     // Main networking loop, doesn't run on RAF
     setInterval(() => {
-      if (running || !NAF.connection.dataAdapter) return;
+      if (running || !NAF.connection.adapter) return;
 
       running = true;
       const now = performance.now();
@@ -810,7 +810,7 @@ AFRAME.registerComponent('networked', {
             // Skip the property index which is always zero for this.
             const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 3) };
 
-            if (NAF.connection.dataAdapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
               el.setAttribute(componentName, attributeValue);
             }
           } else {
@@ -843,14 +843,14 @@ AFRAME.registerComponent('networked', {
                 }
               }
 
-              if (NAF.connection.dataAdapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
+              if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)){
                 el.setAttribute(componentName, attributeValue);
               }
             }
           }
         }
       } else {
-        if (NAF.connection.dataAdapter.authorizeEntityManipulation(this.el, sender)) {
+        if (NAF.connection.adapter.authorizeEntityManipulation(this.el, sender)) {
           const x = refGetNumeric(componentDataRef, 1) || 0;
           const y = refGetNumeric(componentDataRef, 2) || 0;
           const z = refGetNumeric(componentDataRef, 3) || 0;

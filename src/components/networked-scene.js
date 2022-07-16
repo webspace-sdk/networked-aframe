@@ -2,7 +2,6 @@
 
 AFRAME.registerComponent('networked-scene', {
   schema: {
-    serverURL: {default: '/'},
     app: {default: 'default'},
     room: {default: 'default'},
     connectOnLoad: {default: true},
@@ -34,7 +33,7 @@ AFRAME.registerComponent('networked-scene', {
     if (this.hasOnConnectFunction()) {
       this.callOnConnect();
     }
-    return NAF.connection.connect(this.data.serverURL, this.data.app, this.data.room, this.data.audio);
+    return NAF.connection.connect(this.data.app, this.data.room, this.data.audio);
   },
 
   checkDeprecatedProperties: function() {

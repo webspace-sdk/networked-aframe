@@ -5,7 +5,6 @@
  */
 
 const WebSocketTracker = require('bittorrent-tracker/lib/client/websocket-tracker')
-const randombytes = require('randombytes')
 const EventEmitter = require('events')
 const sha1 = require('simple-sha1')
 const debug = require('debug')('p2pt')
@@ -35,6 +34,7 @@ class P2PT extends EventEmitter {
     this.peers = new Map();
     this.msgChunks = new Map();
     this.responseWaiting = new Map();
+    this.connectedClients = [];
 
     if (identifierString) { this.setIdentifier(identifierString) }
   }
@@ -83,7 +83,7 @@ class P2PT extends EventEmitter {
           connectedChannelCount++;
         }
 
-        if (connectedChannelCount < 2) {
+        if (connectedChannelCount === 0) {
           channels.set(peer.channelName, peer);
 
           if (newpeer) {
@@ -92,6 +92,8 @@ class P2PT extends EventEmitter {
         } else {
           peer.destroy()
         }
+
+        this._updateConnectedClients();
       })
 
       peer.on('data', data => {
@@ -138,11 +140,13 @@ class P2PT extends EventEmitter {
 
       peer.on('error', err => {
         this._removePeer(peer)
+        this._updateConnectedClients();
         debug('Error in connection : ' + err)
       })
 
       peer.on('close', () => {
         this._removePeer(peer)
+        this._updateConnectedClients();
         debug('Connection closed with ' + peer.id)
       })
     })
@@ -408,6 +412,21 @@ class P2PT extends EventEmitter {
       this.trackers[key].announce(this._defaultAnnounceOpts())
     }
   }
+
+  _updateConnectedClients() {
+    this.connectedClients.length = 0;
+
+    for (const [peerId, channels] of this.peers) {
+      for (const peer of channels) {
+        if (peer.connected) {
+          this.connectedClients.push(peerId);
+          continue;
+        }
+      }
+    }
+  }
 }
+
+// TODO TURN servers? see jel-url-utils setupPeerConnection
 
 module.exports = P2PT

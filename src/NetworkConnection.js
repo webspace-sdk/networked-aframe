@@ -20,35 +20,27 @@ class NetworkConnection {
     this.activeDataChannels = {};
   }
 
-  setNetworkAdapter(adapter, dataAdapter) {
+  setNetworkAdapter(adapter) {
     this.adapter = adapter;
-    this.dataAdapter = dataAdapter;
   }
 
   connect(serverUrl, appName, roomName, enableAudio = false) {
     NAF.app = appName;
     NAF.room = roomName;
 
-    this.adapter.setServerUrl(serverUrl);
     this.adapter.setApp(appName);
-    this.adapter.setRoom(roomName);
-
-    this.dataAdapter.setRoom(roomName);
 
     this.adapter.setServerConnectListeners(
       this.connectSuccess.bind(this),
       this.connectFailure.bind(this)
     );
-    this.dataAdapter.setDataChannelListeners(
+    this.adapter.setDataChannelListeners(
       this.dataChannelOpen.bind(this),
       this.dataChannelClosed.bind(this),
       this.receivedData.bind(this)
     );
-    this.adapter.setRoomOccupantListener(this.occupantsReceived.bind(this));
 
-    this.dataAdapter.connect();
-
-    return this.adapter.connect();
+    return this.adapter.connect().then(() => this.adapter.joinRoom(roomName));
   }
 
   onConnect(callback) {
@@ -73,36 +65,8 @@ class NetworkConnection {
     NAF.log.error(errorCode, "failure to connect");
   }
 
-  occupantsReceived(occupantList) {
-    var prevConnectedClients = Object.assign({}, this.connectedClients);
-    this.connectedClients = occupantList;
-    this.checkForDisconnectingClients(prevConnectedClients, occupantList);
-    this.checkForConnectingClients(occupantList);
-  }
-
-  checkForDisconnectingClients(oldOccupantList, newOccupantList) {
-    for (var id in oldOccupantList) {
-      var clientFound = newOccupantList.hasOwnProperty(id);
-      if (!clientFound) {
-        NAF.log.write('Closing stream to ', id);
-        this.adapter.closeStreamConnection(id);
-      }
-    }
-  }
-
-  // Some adapters will handle this internally
-  checkForConnectingClients(occupantList) {
-    for (var id in occupantList) {
-      var startConnection = this.isNewClient(id) && this.adapter.shouldStartConnectionTo(occupantList[id]);
-      if (startConnection) {
-        NAF.log.write('Opening datachannel to ', id);
-        this.adapter.startStreamConnection(id);
-      }
-    }
-  }
-
   getConnectedClients() {
-    return this.connectedClients;
+    return this.adapter.connectedClients;
   }
 
   isConnected() {
@@ -144,11 +108,11 @@ class NetworkConnection {
   }
 
   broadcastData(data) {
-    this.dataAdapter.broadcastData(data);
+    this.adapter.broadcastData(data);
   }
 
   broadcastDataGuaranteed(data) {
-    this.dataAdapter.broadcastDataGuaranteed(data);
+    this.adapter.broadcastDataGuaranteed(data);
   }
 
   broadcastCustomData(dataType, customData, guaranteed) {
@@ -168,9 +132,9 @@ class NetworkConnection {
   sendData(data, toClientId, guaranteed) {
     if (this.hasActiveDataChannel(toClientId)) {
       if (guaranteed) {
-        this.dataAdapter.sendDataGuaranteed(data, toClientId);
+        this.adapter.sendDataGuaranteed(data, toClientId);
       } else {
-        this.dataAdapter.sendData(data, toClientId);
+        this.adapter.sendData(data, toClientId);
       }
     } else {
       // console.error("NOT-CONNECTED", "not connected to " + toClient);
@@ -235,15 +199,14 @@ class NetworkConnection {
   disconnect() {
     this.entities.removeRemoteEntities();
     this.adapter.disconnect();
-    this.dataAdapter.disconnect();
+    this.adapter.disconnect();
 
     NAF.app = '';
     NAF.room = '';
     NAF.clientId = '';
-    this.connectedClients = {};
     this.activeDataChannels = {};
     this.adapter = null;
-    this.dataAdapter = null;
+    this.adapter = null;
     AFRAME.scenes[0].systems.networked.reset();
 
     document.body.removeEventListener('connected', this.onConnectCallback);

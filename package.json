@@ -28,9 +28,7 @@
     "bittorrent-tracker": "^9.19.0",
     "buffered-interpolation": "github:gfodor/buffered-interpolation#feature/lazy-frame-fill",
     "flatbuffers": "github:gfodor/flatbuffers#bug/length-as-number-bigint",
-    "randombytes": "^2.1.0",
-    "simple-sha1": "^3.1.0",
-    "uuid": "^8.3.2"
+    "simple-sha1": "^3.1.0"
   },
   "devDependencies": {
     "aframe": "0.7.0",
