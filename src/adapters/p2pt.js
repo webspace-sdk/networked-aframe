@@ -417,7 +417,7 @@ class P2PT extends EventEmitter {
     this.connectedClients.length = 0;
 
     for (const [peerId, channels] of this.peers) {
-      for (const peer of channels) {
+      for (const peer of channels.values()) {
         if (peer.connected) {
           this.connectedClients.push(peerId);
           continue;

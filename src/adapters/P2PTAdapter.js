@@ -31,6 +31,10 @@ class P2PTAdapter {
     return Promise.resolve();
   }
 
+  getConnectedClients() {
+    return this.p2pt.connectedClients;
+  }
+
   joinRoom(room) {
     this.room = room;
 

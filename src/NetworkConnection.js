@@ -9,6 +9,7 @@ const flatbuilder = new Builder(1024);
 
 const FBMessage = require('./schema/networked-aframe/message').Message;
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp;
+const NUMBER_OF_SERVER_TIME_REQUESTS = 5;
 
 class NetworkConnection {
 
@@ -16,11 +17,10 @@ class NetworkConnection {
     this.entities = networkEntities;
     this.dataChannelSubs = {};
 
-    this.connectedClients = {};
     this.activeDataChannels = {};
 
-    this._serverTimeRequests = 0;
     this._avgTimeOffset = 0;
+    this._serverTimeRequests = 0;
     this._timeOffsets = [];
   }
 
@@ -72,7 +72,7 @@ class NetworkConnection {
   }
 
   getConnectedClients() {
-    return this.adapter.connectedClients;
+    return this.adapter.getConnectedClients();
   }
 
   isConnected() {
@@ -219,7 +219,7 @@ class NetworkConnection {
   }
 
   updateTimeOffset() {
-    return new Promise(res => {
+    return new Promise(done => {
       const clientSentTime = Date.now();
 
       fetch(document.location.href, {
@@ -234,7 +234,7 @@ class NetworkConnection {
 
         this._serverTimeRequests++;
 
-        if (this._serverTimeRequests <= 10) {
+        if (this._serverTimeRequests <= NUMBER_OF_SERVER_TIME_REQUESTS) {
           this._timeOffsets.push(timeOffset);
         } else {
           this._timeOffsets[this._serverTimeRequests % 10] = timeOffset;
@@ -246,8 +246,11 @@ class NetworkConnection {
 
         if (this._serverTimeRequests > 10) {
           setTimeout(() => this.updateTimeOffset(), 5 * 60 * 1000); // Sync clock every 5 minutes.
+          this._serverTimeRequests = 0;
+          this._timeOffsets.length = 0;
+          done();
         } else {
-          this.updateTimeOffset();
+          this.updateTimeOffset().then(done);
         }
       });
     });
