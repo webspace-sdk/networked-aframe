@@ -1,12 +1,12 @@
 /* global NAF */
 var ChildEntityCache = require('./ChildEntityCache');
-const uuid = require("uuid")
+const { bytesToHex } = require('./utils');
 const FBFullUpdateData = require('./schema/networked-aframe/full-update-data').FullUpdateData;
 const FBUpdateOp = require('./schema/networked-aframe/update-op').UpdateOp;
 
 const fullUpdateDataRef = new FBFullUpdateData();
-const uuidByteBuf = [];
-uuidByteBuf.length = 16;
+const clientIdByteBuf = [];
+clientIdByteBuf.length = 20;
 
 class NetworkEntities {
 
@@ -41,17 +41,17 @@ class NetworkEntities {
     const networkId = updateRef.networkId();
     const fullUpdateData = updateRef.fullUpdateData(fullUpdateDataRef);
 
-    for (let i = 0; i < 16; i++) {
-      uuidByteBuf[i] = updateRef.owner(i);
+    for (let i = 0; i < 20; i++) {
+      clientIdByteBuf[i] = updateRef.owner(i);
     }
 
-    const owner = uuid.stringify(uuidByteBuf);
+    const owner = bytesToHex(clientIdByteBuf);
 
-    for (let i = 0; i < 16; i++) {
-      uuidByteBuf[i] = fullUpdateData.creator(i);
+    for (let i = 0; i < 20; i++) {
+      clientIdByteBuf[i] = fullUpdateData.creator(i);
     }
 
-    const creator = uuid.stringify(uuidByteBuf);
+    const creator = bytesToHex(clientIdByteBuf);
     const template = fullUpdateData.template();
     const persistent = fullUpdateData.persistent();
 
@@ -67,11 +67,11 @@ class NetworkEntities {
     const isFullSync = updateRef.fullUpdateData(fullUpdateDataRef) != null;
     const networkId = updateRef.networkId();
 
-    for (let i = 0; i < 16; i++) {
-      uuidByteBuf[i] = updateRef.owner(i);
+    for (let i = 0; i < 20; i++) {
+      clientIdByteBuf[i] = updateRef.owner(i);
     }
 
-    const owner = uuid.stringify(uuidByteBuf);
+    const owner = bytesToHex(clientIdByteBuf);
 
     if (this.hasEntity(networkId)) {
       const entity = this.entities[networkId];

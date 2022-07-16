@@ -106,3 +106,28 @@ module.exports.isMine = function(entity) {
 module.exports.almostEqualVec3 = function(u, v, epsilon) {
   return Math.abs(u.x-v.x)<epsilon && Math.abs(u.y-v.y)<epsilon && Math.abs(u.z-v.z)<epsilon;
 };
+
+// Convert a hex string to a byte array
+module.exports.hexToBytes = function(hex, bytes = []) {
+  bytes.length = hex.length / 2;
+
+  for (let c = 0, i = 0; c < hex.length; c += 2, i += 1)
+    bytes[i] = parseInt(hex.substr(c, 2), 16);
+
+  return bytes;
+}
+
+let hexBuf = [];
+
+// Convert a byte array to a hex string
+module.exports.bytesToHex = function(bytes) {
+  hexBuf.length = 0;
+
+  for (let i = 0; i < bytes.length; i++) {
+      const current = bytes[i] < 0 ? bytes[i] + 256 : bytes[i];
+      hexBuf.push((current >>> 4).toString(16));
+      hexBuf.push((current & 0xF).toString(16));
+  }
+
+  return hexBuf.join("");
+}

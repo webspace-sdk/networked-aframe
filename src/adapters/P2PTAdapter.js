@@ -1,13 +1,20 @@
 const P2PT = require('./p2pt');
+const { hexToBytes, bytesToHex } = require('../utils');
 
 class P2PTAdapter {
   constructor() {
     this.room = null;
+    this.clientId = null;
   }
 
   setRoom(room) {
     this.room = room;
   }
+
+  setClientId(clientId) {
+    this.clientId = clientId;
+  }
+
 setDataChannelListeners(onDataChannelOpen, onDataChannelClosed, onReceivedData) {
     this.onDataChannelOpen = onDataChannelOpen;
     this.onDataChannelClosed = onDataChannelClosed;
@@ -24,6 +31,8 @@ setDataChannelListeners(onDataChannelOpen, onDataChannelClosed, onReceivedData) 
       "ws://tracker.files.fm:7072/announce"
       ]
     )
+
+    this.p2pt.setPeerIdBytes(new Uint8Array(hexToBytes(this.clientId)));
 
     this.p2pt.setIdentifier(`_jel_${this.room}`);
 

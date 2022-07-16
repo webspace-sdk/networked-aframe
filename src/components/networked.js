@@ -6,11 +6,11 @@ const { Builder } = require('flatbuffers/js/builder');
 const { Long } = require('flatbuffers/js/long');
 const { fromByteWidth } = require('flatbuffers/js/flexbuffers/bit-width-util');
 const { refCp, refGetNumeric, refGetInt, refGetToObject, refAdvanceToIndexGet } = require('../FlexBufferUtils');
-const uuid = require("uuid")
 const deepEqual = require('../DeepEquals');
 const DEG2RAD = THREE.Math.DEG2RAD;
 const OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale'];
 const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper');
+const { hexToBytes, bytesToHex } = require('../utils');
 
 const tmpPosition = new THREE.Vector3();
 const tmpQuaternion = new THREE.Quaternion();
@@ -21,7 +21,7 @@ const FBUpdateOp = require('../schema/networked-aframe/update-op').UpdateOp;
 const FBDeleteOp = require('../schema/networked-aframe/delete-op').DeleteOp;
 const FBCustomOp = require('../schema/networked-aframe/custom-op').CustomOp;
 
-const uuidByteBuf = [];
+const clientIdByteBuf = [];
 const opOffsetBuf = [];
 const fullUpdateDataRef = new FBFullUpdateData();
 const messageRef = new FBMessage();
@@ -31,35 +31,6 @@ const customRef = new FBCustomOp();
 const tmpLong = new Long(0, 0);
 
 const MAX_AWAIT_INSTANTIATION_MS = 10000;
-
-function uuidParse(uuid, arr) {
-  arr.length = 16;
-
-  var v;
-
-  arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
-  arr[1] = v >>> 16 & 0xff;
-  arr[2] = v >>> 8 & 0xff;
-  arr[3] = v & 0xff; // Parse ........-####-....-....-............
-
-  arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
-  arr[5] = v & 0xff; // Parse ........-....-####-....-............
-
-  arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
-  arr[7] = v & 0xff; // Parse ........-....-....-####-............
-
-  arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
-  arr[9] = v & 0xff; // Parse ........-....-....-....-############
-  // (Use "/" to avoid 32-bit truncation when bit-shifting high-order bytes)
-
-  arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 0x10000000000 & 0xff;
-  arr[11] = v / 0x100000000 & 0xff;
-  arr[12] = v >>> 24 & 0xff;
-  arr[13] = v >>> 16 & 0xff;
-  arr[14] = v >>> 8 & 0xff;
-  arr[15] = v & 0xff;
-  return arr;
-}
 
 const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4));
 
@@ -287,7 +258,7 @@ AFRAME.registerSystem("networked", {
       }
 
       const componentsOffset = FBUpdateOp.createComponentsVector(flatbuilder, new Uint8Array(flexbuilder.finish()));
-      const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, uuidParse(c.data.owner, uuidByteBuf));
+      const ownerOffset = FBUpdateOp.createOwnerVector(flatbuilder, hexToBytes(c.data.owner, clientIdByteBuf));
 
       let fullUpdateDataOffset = null;
 
@@ -295,7 +266,7 @@ AFRAME.registerSystem("networked", {
         sendGuaranteed = true;
 
         fullUpdateDataOffset = FBFullUpdateData.createFullUpdateData(flatbuilder,
-           FBFullUpdateData.createCreatorVector(flatbuilder, uuidParse(c.data.creator, uuidByteBuf)),
+           FBFullUpdateData.createCreatorVector(flatbuilder, hexToBytes(c.data.creator, clientIdByteBuf)),
            flatbuilder.createSharedString(c.data.template),
            c.data.persistent,
            flatbuilder.createSharedString(c.getParentId())
@@ -732,12 +703,12 @@ AFRAME.registerComponent('networked', {
 
   networkUpdate: function(updateRef, sender) {
     try {
-      uuidByteBuf.length = 16;
-      for (let i = 0; i < 16; i++) {
-        uuidByteBuf[i] = updateRef.owner(i);
+      clientIdByteBuf.length = 20;
+      for (let i = 0; i < 20; i++) {
+        clientIdByteBuf[i] = updateRef.owner(i);
       }
 
-      const entityDataOwner = uuid.stringify(uuidByteBuf);
+      const entityDataOwner = bytesToHex(clientIdByteBuf);
       const ownerTimeLong = updateRef.lastOwnerTime();
       const entityDataLastOwnerTime = ownerTimeLong.high * 0x40000000 + ownerTimeLong.low;
 

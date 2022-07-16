@@ -37,12 +37,12 @@ class P2PT extends EventEmitter {
     this.responseWaiting = new Map();
 
     if (identifierString) { this.setIdentifier(identifierString) }
+  }
 
-    this._peerIdBuffer = randombytes(20)
+  setPeerIdBytes(peerIdBytes) {
+    this._peerIdBuffer = Buffer.from(peerIdBytes);
     this._peerId = this._peerIdBuffer.toString('hex')
     this._peerIdBinary = this._peerIdBuffer.toString('binary')
-
-    debug('my peer id: ' + this._peerId)
   }
 
   /**
