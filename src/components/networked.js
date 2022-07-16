@@ -232,6 +232,7 @@ AFRAME.registerSystem("networked", {
 
     for (let i = 0, l = this.components.length; i < l; i++) {
       const c = this.components[i];
+
       if (!c.isMine()) continue;
       if (!c.canSync()) continue;
       if (!c.el.parentElement) {

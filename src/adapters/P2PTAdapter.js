@@ -69,7 +69,7 @@ class P2PTAdapter {
       });
 
       const onConnectHandler = () => {
-        this.onConnectSuccess(this._peerId);
+        this.onConnectSuccess(this.clientId);
         this.p2pt.removeListener("trackerconnect", onConnectHandler);
         res();
       };
@@ -153,10 +153,11 @@ class P2PTAdapter {
   }
 
   getMediaStream(clientId, type /* "audio", "video" */) {
-
+    return Promise.resolve();
   }
 
-  // fire event video_stream_changed, audio_stream_changed
+  // fire event video_stream_changed, audio_stream_changed on body
+  // onAudioStreamChanged: async function({ detail: { peerId } }) {
 }
 
 module.exports = P2PTAdapter;
