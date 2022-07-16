@@ -33,7 +33,6 @@ class P2PTAdapter {
 
   joinRoom(room) {
     this.room = room;
-    console.log("JOIN", room);
 
     return new Promise(res => {
       this.leaveRoom();

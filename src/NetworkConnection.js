@@ -18,6 +18,10 @@ class NetworkConnection {
 
     this.connectedClients = {};
     this.activeDataChannels = {};
+
+    this._serverTimeRequests = 0;
+    this._avgTimeOffset = 0;
+    this._timeOffsets = [];
   }
 
   setNetworkAdapter(adapter) {
@@ -40,7 +44,9 @@ class NetworkConnection {
       this.receivedData.bind(this)
     );
 
-    return this.adapter.connect().then(() => this.adapter.joinRoom(roomName));
+    return this.updateTimeOffset()
+      .then(() => this.adapter.connect())
+      .then(() => this.adapter.joinRoom(roomName));
   }
 
   onConnect(callback) {
@@ -193,7 +199,7 @@ class NetworkConnection {
   }
 
   getServerTime() {
-    return this.adapter.getServerTime();
+    return Date.now() + this._avgTimeOffset;
   }
 
   disconnect() {
@@ -210,6 +216,41 @@ class NetworkConnection {
     AFRAME.scenes[0].systems.networked.reset();
 
     document.body.removeEventListener('connected', this.onConnectCallback);
+  }
+
+  updateTimeOffset() {
+    return new Promise(res => {
+      const clientSentTime = Date.now();
+
+      fetch(document.location.href, {
+        method: "HEAD",
+        cache: "no-cache"
+      }).then(res => {
+        const precision = 1000;
+        const serverReceivedTime = new Date(res.headers.get("Date")).getTime() + precision / 2;
+        const clientReceivedTime = Date.now();
+        const serverTime = serverReceivedTime + (clientReceivedTime - clientSentTime) / 2;
+        const timeOffset = serverTime - clientReceivedTime;
+
+        this._serverTimeRequests++;
+
+        if (this._serverTimeRequests <= 10) {
+          this._timeOffsets.push(timeOffset);
+        } else {
+          this._timeOffsets[this._serverTimeRequests % 10] = timeOffset;
+        }
+
+        this._avgTimeOffset = Math.floor(
+          this._timeOffsets.reduce((acc, offset) => (acc += offset), 0) / this._timeOffsets.length
+        );
+
+        if (this._serverTimeRequests > 10) {
+          setTimeout(() => this.updateTimeOffset(), 5 * 60 * 1000); // Sync clock every 5 minutes.
+        } else {
+          this.updateTimeOffset();
+        }
+      });
+    });
   }
 }
 
