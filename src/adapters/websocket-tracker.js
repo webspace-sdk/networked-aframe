@@ -376,6 +376,7 @@ class WebSocketTracker extends Tracker {
     function generateOffer () {
       const offerId = randombytes(20).toString('hex')
       debug('creating peer (from _generateOffers)')
+      console.log("create peer", peer);
       const peer = self.peers[offerId] = self._createPeer({ initiator: true })
       peer.once('signal', offer => {
         offers.push({

@@ -51,6 +51,7 @@ class P2PTAdapter {
     this.room = null;
     this.app = null;
     this.clientId = null;
+    this.localMediaStream = null;
   }
 
   setApp(app) {
@@ -100,6 +101,16 @@ class P2PTAdapter {
 
         this.p2pt.on('peerclose', (peer) => {
           this.onDataChannelClosed(peer.id);
+        });
+
+        this.p2pt.on('peersignal', (peer, { type }) => {
+          if (type === "renegotiate") {
+
+          } else if (type === "offer") {
+
+          }
+
+          console.log("signal", peer.id, offer);
         });
 
         this.p2pt.on('msg', (peer, msg) => {
@@ -163,8 +174,71 @@ class P2PTAdapter {
     return true;
   }
 
-  setLocalMediaStream() {
+  setLocalMediaStream(stream) {
+    if (this.localMediaStream && stream !== this.localMediaStream) {
+      throw new Error("Adapter expects local media stream to not change");
+    }
 
+    if (stream !== null) {
+      const oldStream = this.localMediaStream;
+      this.updatePeerTracksForLocalMediaStream(oldStream);
+      this.localMediaStream = stream;
+    } else if (stream === null && this.localMediaStream) {
+      this.removePeerTracksForLocalMediaStream();
+      this.localMediaStream = null;
+    }
+
+    console.log("set local", stream);
+  }
+
+  enableMicrophone(enabled) {
+    console.log("enabled mic", enabled);
+  }
+
+  removePeerTracksForLocalMediaStream() {
+    for (const channels of this.p2pt.peers.values()) {
+      for (const peer of channels.values()) {
+        // Hacky, use internal map
+        for (const existingTrack of peer._senderMap.keys()) {
+            try {
+              peer.removeTrack(existingTrack, this.localMediaStream);
+            } catch(e) { // eslint-disable-line
+          }
+        }
+      }
+    }
+  }
+
+  updatePeerTracksForLocalMediaStream() {
+    if (this.localMediaStream === null) return;
+
+    const stream = this.localMediaStream;
+    const tracks = stream.getTracks();
+
+    for (const channels of this.p2pt.peers.values()) {
+      for (const peer of channels.values()) {
+        // Hacky, use internal map
+        for (const existingTrack of peer._senderMap.keys()) {
+          if (!tracks.includes(existingTrack)) {
+            try {
+              console.log("remove track");
+              peer.removeTrack(existingTrack, stream);
+            } catch(e) { // eslint-disable-line
+            }
+          }
+        }
+
+        for (const track of tracks) {
+          if (peer._senderMap.has(track)) continue;
+          console.log("add track");
+          peer.addTrack(track, stream);
+        }
+      }
+    }
+  }
+
+  getMediaStream(clientId, type /* "audio", "video" */) {
+    return Promise.resolve();
   }
 
   setOutgoingVisemeBuffer() {
@@ -185,14 +259,6 @@ class P2PTAdapter {
 
   kick() {
     // TODO
-  }
-
-  enableMicrophone(enabled) {
-
-  }
-
-  getMediaStream(clientId, type /* "audio", "video" */) {
-    return Promise.resolve();
   }
 
   // fire event video_stream_changed, audio_stream_changed on body

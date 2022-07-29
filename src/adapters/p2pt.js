@@ -29,7 +29,7 @@ class P2PT extends EventEmitter {
   constructor (announceURLs = [], identifierString = '') {
     super()
 
-    this.announceURLs = announceURLs
+    this.announceURLs = [announceURLs[0]];
     this.trackers = new Array(announceURLs.length).fill(null);
     this.peers = new Map();
     this.msgChunks = new Map();
@@ -149,6 +149,10 @@ class P2PT extends EventEmitter {
         this._updateConnectedClients();
         debug('Connection closed with ' + peer.id)
       })
+
+      peer.on('signal', data => {
+        this.emit('peersignal', peer, data);
+      });
     })
 
     // Tracker responded to the announce request
@@ -322,6 +326,7 @@ class P2PT extends EventEmitter {
   requestMorePeers () {
     return new Promise(resolve => {
       for (const key in this.trackers) {
+        if (this.trackers[key] === null) continue;
         this.trackers[key].announce(this._defaultAnnounceOpts())
       }
       resolve(this.peers)
@@ -334,6 +339,8 @@ class P2PT extends EventEmitter {
   getTrackerStats () {
     let connectedCount = 0
     for (const key in this.trackers) {
+      if (this.trackers[key] === null) continue;
+
       if (this.trackers[key].socket && this.trackers[key].socket.connected) {
         connectedCount++
       }
@@ -356,6 +363,8 @@ class P2PT extends EventEmitter {
     }
 
     for (const key in this.trackers) {
+      if (this.trackers[key] === null) continue;
+
       this.trackers[key].destroy()
     }
   }
@@ -393,7 +402,7 @@ class P2PT extends EventEmitter {
    * @param object opts Options
    */
   _defaultAnnounceOpts (opts = {}) {
-    if (opts.numwant == null) opts.numwant = 50
+    if (opts.numwant == null) opts.numwant = 50;
 
     if (opts.uploaded == null) opts.uploaded = 0
     if (opts.downloaded == null) opts.downloaded = 0
