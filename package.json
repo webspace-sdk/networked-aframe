@@ -25,16 +25,11 @@
   },
   "repository": "networked-aframe/networked-aframe",
   "dependencies": {
-    "bittorrent-tracker": "^9.19.0",
     "buffered-interpolation": "github:gfodor/buffered-interpolation#feature/lazy-frame-fill",
     "clone": "^2.1.2",
     "debug": "^4.3.4",
     "flatbuffers": "github:gfodor/flatbuffers#bug/length-as-number-bigint",
-    "randombytes": "^2.1.0",
-    "simple-peer": "^9.11.1",
-    "simple-sha1": "^3.1.0",
-    "simple-websocket": "^9.1.0",
-    "socks": "^2.6.2"
+    "p2pcf": "^1.2"
   },
   "devDependencies": {
     "aframe": "0.7.0",

@@ -8,15 +8,15 @@ AFRAME.registerComponent('networked-scene', {
     onConnect: {default: 'onConnect'},
     adapter: {default: 'wsEasyRtc'}, // See https://github.com/networked-aframe/networked-aframe#adapters for list of adapters
     audio: {default: false}, // Only if adapter supports audio
-    debug: {default: false},
+    debug: {default: false}
   },
 
-  init: function() {
-    var el = this.el;
-    this.connect = this.connect.bind(this);
-    el.addEventListener('connect', this.connect);
+  init: function () {
+    var el = this.el
+    this.connect = this.connect.bind(this)
+    el.addEventListener('connect', this.connect)
     if (this.data.connectOnLoad) {
-      el.emit('connect', null, false);
+      el.emit('connect', null, false)
     }
   },
 
@@ -24,41 +24,41 @@ AFRAME.registerComponent('networked-scene', {
    * Connect to signalling server and begin connecting to other clients
    */
   connect: function () {
-    NAF.log.setDebug(this.data.debug);
-    NAF.log.write('Networked-Aframe Connecting...');
+    NAF.log.setDebug(this.data.debug)
+    NAF.log.write('Networked-Aframe Connecting...')
 
-    this.checkDeprecatedProperties();
-    this.setupNetworkAdapter();
+    this.checkDeprecatedProperties()
+    this.setupNetworkAdapter()
 
     if (this.hasOnConnectFunction()) {
-      this.callOnConnect();
+      this.callOnConnect()
     }
-    return NAF.connection.connect(this.data.app, this.data.room, this.data.audio);
+    return NAF.connection.connect(this.data.app, this.data.room, this.data.audio)
   },
 
-  checkDeprecatedProperties: function() {
+  checkDeprecatedProperties: function () {
     // No current
   },
 
-  setupNetworkAdapter: function() {
-    var adapterName = this.data.adapter;
-    var adapter = NAF.adapters.make(adapterName);
-    var dataNetworkAdapter = NAF.adapters.make("p2pt");
-    NAF.connection.setNetworkAdapter(adapter, dataNetworkAdapter);
-    this.el.emit('adapter-ready', adapter, false);
+  setupNetworkAdapter: function () {
+    var adapterName = this.data.adapter
+    var adapter = NAF.adapters.make(adapterName)
+    var dataNetworkAdapter = NAF.adapters.make('p2pcf')
+    NAF.connection.setNetworkAdapter(adapter, dataNetworkAdapter)
+    this.el.emit('adapter-ready', adapter, false)
   },
 
-  hasOnConnectFunction: function() {
-    return this.data.onConnect != '' && window.hasOwnProperty(this.data.onConnect);
+  hasOnConnectFunction: function () {
+    return this.data.onConnect !== '' && window.hasOwnProperty(this.data.onConnect)
   },
 
-  callOnConnect: function() {
-    NAF.connection.onConnect(window[this.data.onConnect]);
+  callOnConnect: function () {
+    NAF.connection.onConnect(window[this.data.onConnect])
   },
 
-  remove: function() {
-    NAF.log.write('networked-scene disconnected');
-    this.el.removeEventListener('connect', this.connect);
-    NAF.connection.disconnect();
+  remove: function () {
+    NAF.log.write('networked-scene disconnected')
+    this.el.removeEventListener('connect', this.connect)
+    NAF.connection.disconnect()
   }
-});
+})
