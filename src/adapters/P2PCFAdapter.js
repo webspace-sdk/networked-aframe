@@ -45,15 +45,15 @@ class P2PCFAdapter {
 
       this.p2pcf.on('peerconnect', (peer) => {
         // this.p2pcf.send(peer, flatbuilder.asUint8Array());
-        this.onDataChannelOpen(peer.id)
+        this.onDataChannelOpen(peer.client_id)
       })
 
       this.p2pcf.on('peerclose', (peer) => {
-        this.onDataChannelClosed(peer.id)
+        this.onDataChannelClosed(peer.client_id)
       })
 
       this.p2pcf.on('msg', (peer, msg) => {
-        this.onReceivedData(msg, peer.id)
+        this.onReceivedData(new Uint8Array(msg), peer.client_id)
       })
 
       this.p2pcf.start()
