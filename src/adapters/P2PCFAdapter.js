@@ -1,5 +1,37 @@
-/* globals CustomEvent, MediaStream */
+/* globals CustomEvent, MediaStream, RTCRtpSender, performance */
 const P2PCF = require('p2pcf').default
+const sdpTransform = require('sdp-transform')
+
+// If the browser supports insertable streams, we insert a 5 byte payload at the end of the voice
+// frame encoding 4 magic bytes and 1 viseme byte. This is a hack because on older browsers
+// this data will be injested into the codec, but since the values are near zero it seems to have
+// minimal effect. (Eventually all browsers will support insertable streams.)
+const supportsInsertableStreams = !!(window.RTCRtpSender && !!RTCRtpSender.prototype.createEncodedStreams)
+const visemeMagicBytes = [0x00, 0x00, 0x00, 0x01] // Bytes to add to end of frame to indicate a viseme will follow
+
+const rtcPeerConnectionProprietaryConstraints = {
+  optional: [{ googDscp: true }]
+}
+
+const sdpTransformConfigureCodecs = sdp => {
+  const isOffer = sdp.indexOf('actpass') !== -1
+  const parsedSdp = sdpTransform.parse(sdp)
+  for (let i = 0; i < parsedSdp.media.length; i++) {
+    for (let j = 0; j < parsedSdp.media[i].fmtp.length; j++) {
+      if (parsedSdp.media[i].type === 'audio' && parsedSdp.media[i].fmtp[j].config.indexOf('=') !== -1) {
+        parsedSdp.media[i].fmtp[j].config += ';stereo=0;maxaveragebitrate=64000;cbr=0;usetx=1;'
+
+        if (isOffer) {
+          parsedSdp.media[i].fmtp[j].config += 'sprop-stereo=0;'
+        }
+      } else if (parsedSdp.media[i].type === 'video' && parsedSdp.media[i].fmtp[j].config.indexOf('=') !== -1) {
+        parsedSdp.media[i].fmtp[j].config += ';x-google-start-bitrate=1000;'
+      }
+    }
+  }
+
+  return sdpTransform.write(parsedSdp)
+}
 
 class P2PCFAdapter {
   constructor () {
@@ -10,6 +42,9 @@ class P2PCFAdapter {
     this.audioTracks = new Map()
     this.videoTracks = new Map()
     this.pendingMediaRequests = new Map()
+    this.visemeMap = new Map()
+    this.visemeTimestamps = new Map()
+    this.type = 'p2pcf'
   }
 
   setApp (app) {
@@ -36,7 +71,7 @@ class P2PCFAdapter {
   }
 
   getConnectedClients () {
-    return this.p2pcf.connectedClients
+    return this.p2pcf.connectedSessions
   }
 
   joinRoom (room) {
@@ -45,10 +80,19 @@ class P2PCFAdapter {
     return new Promise(resolve => {
       this.leaveRoom()
 
-      this.p2pcf = new P2PCF(this.clientId, this.room)
+      this.p2pcf = new P2PCF(this.clientId, this.room,
+        {
+          rtcPeerConnectionOptions: {
+            rtcpMuxPolicy: 'require',
+            sdpSemantics: 'unified-plan'
+            // encodedInsertableStreams: supportsInsertableStreams
+          },
+          rtcPeerConnectionProprietaryConstraints,
+          fastPollingRateMs: 250,
+          sdpTransform: sdpTransformConfigureCodecs
+        })
 
       this.p2pcf.on('peerconnect', (peer) => {
-        // this.p2pcf.send(peer, flatbuilder.asUint8Array());
         this.onDataChannelOpen(peer.client_id)
 
         peer.on('track', track => {
@@ -254,6 +298,19 @@ class P2PCFAdapter {
     if (requests && Object.keys(requests).length === 0) {
       this.pendingMediaRequests.delete(clientId)
     }
+  }
+
+  setOutgoingVisemeBuffer (buffer) {
+    this.outgoingVisemeBuffer = buffer
+  }
+
+  getCurrentViseme (peerId) {
+    if (!this.visemeMap.has(peerId)) return 0
+
+    // If last viseme was longer than 1s ago, the producer was paused.
+    if (this.visemeTimestamps.has(peerId) && performance.now() - 1000 >= this.visemeTimestamps.get(peerId)) return 0
+
+    return this.visemeMap.get(peerId)
   }
 }
 
