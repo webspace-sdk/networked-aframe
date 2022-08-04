@@ -95,11 +95,12 @@ class P2PCFAdapter {
 
       this.p2pcf.on('peerconnect', (peer) => {
         this.onDataChannelOpen(peer.client_id)
+        this.updatePeerTracksForLocalMediaStream(peer)
 
         peer.on('track', (track, stream, receiver) => {
           switch (track.kind) {
             case 'video':
-              this.videoTracks.set(peer.id, track)
+              this.videoTracks.set(peer.client_id, track)
               document.body.dispatchEvent(new CustomEvent('video_stream_changed', { detail: { peerId: peer.client_id } }))
               if (supportsInsertableStreams) {
                 const receiverStreams = receiver.createEncodedStreams()
@@ -107,7 +108,7 @@ class P2PCFAdapter {
               }
               break
             case 'audio':
-              this.audioTracks.set(peer.id, track)
+              this.audioTracks.set(peer.client_id, track)
 
               if (supportsInsertableStreams) {
                 // Add viseme decoder
@@ -235,13 +236,14 @@ class P2PCFAdapter {
     }
 
     if (stream !== null) {
-      const oldStream = this.localMediaStream
-      this.updatePeerTracksForLocalMediaStream(oldStream)
+      let oldStream = this.localMediaStream
       this.localMediaStream = stream
 
       for (const track in stream.getTracks()) {
         this.resolvePendingMediaRequestForTrack(this.clientId, track)
       }
+
+      this.updatePeerTracksForLocalMediaStream(null, oldStream)
     } else if (stream === null && this.localMediaStream) {
       this.removePeerTracksForLocalMediaStream()
       this.localMediaStream = null
@@ -264,18 +266,20 @@ class P2PCFAdapter {
     }
   }
 
-  updatePeerTracksForLocalMediaStream () {
+  updatePeerTracksForLocalMediaStream (peerToUpdate = null, oldStream = null) {
     if (this.localMediaStream === null) return
 
     const stream = this.localMediaStream
     const tracks = stream.getTracks()
 
     for (const peer of this.p2pcf.peers.values()) {
+      if (peerToUpdate && peerToUpdate !== peer) continue
+
       // Hacky, use internal map
       for (const existingTrack of peer._senderMap.keys()) {
         if (!tracks.includes(existingTrack)) {
           try {
-            peer.removeTrack(existingTrack, stream)
+            peer.removeTrack(existingTrack, oldStream || stream)
           } catch(e) { // eslint-disable-line
           }
         }
