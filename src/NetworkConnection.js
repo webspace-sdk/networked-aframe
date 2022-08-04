@@ -114,9 +114,9 @@ class NetworkConnection {
 
   broadcastData (data, guaranteed = false) {
     if (guaranteed) {
-      this.adapter.broadcastData(data)
-    } else {
       this.adapter.broadcastDataGuaranteed(data)
+    } else {
+      this.adapter.broadcastData(data)
     }
   }
 
