@@ -32,6 +32,8 @@ const tmpLong = new Long(0, 0)
 
 const MAX_AWAIT_INSTANTIATION_MS = 10000
 
+const HEADER = new Long(0x83ca8493, 0xaa93c102)
+
 const tmpRef = new flexbuffers.toReference(new ArrayBuffer(4)) // eslint-disable-line
 
 // Flatbuffers builder
@@ -150,7 +152,18 @@ AFRAME.registerSystem('networked', {
       const data = incomingData.shift()
       const sender = incomingSenders.shift()
 
-      FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef)
+      const bb = new ByteBuffer(data)
+
+      // Check for proper header
+      const pos = bb.readInt32(bb.position())
+      const offset = bb.__offset(pos, 4)
+      if (!offset) continue
+
+      const header = bb.readUint64(pos + offset)
+      if (header.low !== HEADER.low || header.high !== HEADER.high) continue
+      bb.clear()
+
+      FBMessage.getRootAsMessage(bb, messageRef)
       const now = performance.now()
 
       // Do a pass over the updates first to determine if this message should be skipped + requeued
@@ -307,6 +320,9 @@ AFRAME.registerSystem('networked', {
     if (send) {
       const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf)
       FBMessage.startMessage(flatbuilder)
+      tmpLong.low = HEADER.low
+      tmpLong.high = HEADER.high
+      FBMessage.addHeader(flatbuilder, tmpLong)
       FBMessage.addUpdates(flatbuilder, updatesOffset)
       const messageOffset = FBMessage.endMessage(flatbuilder)
 
