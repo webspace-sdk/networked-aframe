@@ -23,42 +23,35 @@ var Message = /** @class */ (function () {
         bb.setPosition(bb.position() + flatbuffers.SIZE_PREFIX_LENGTH);
         return (obj || new Message()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
     };
-    Message.prototype.header = function () {
-        var offset = this.bb.__offset(this.bb_pos, 4);
-        return offset ? this.bb.readUint64(this.bb_pos + offset) : this.bb.createLong(0, 0);
-    };
     Message.prototype.updates = function (index, obj) {
-        var offset = this.bb.__offset(this.bb_pos, 6);
+        var offset = this.bb.__offset(this.bb_pos, 4);
         return offset ? (obj || new update_op_1.UpdateOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
     };
     Message.prototype.updatesLength = function () {
-        var offset = this.bb.__offset(this.bb_pos, 6);
+        var offset = this.bb.__offset(this.bb_pos, 4);
         return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
     };
     Message.prototype.deletes = function (index, obj) {
-        var offset = this.bb.__offset(this.bb_pos, 8);
+        var offset = this.bb.__offset(this.bb_pos, 6);
         return offset ? (obj || new delete_op_1.DeleteOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
     };
     Message.prototype.deletesLength = function () {
-        var offset = this.bb.__offset(this.bb_pos, 8);
+        var offset = this.bb.__offset(this.bb_pos, 6);
         return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
     };
     Message.prototype.customs = function (index, obj) {
-        var offset = this.bb.__offset(this.bb_pos, 10);
+        var offset = this.bb.__offset(this.bb_pos, 8);
         return offset ? (obj || new custom_op_1.CustomOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
     };
     Message.prototype.customsLength = function () {
-        var offset = this.bb.__offset(this.bb_pos, 10);
+        var offset = this.bb.__offset(this.bb_pos, 8);
         return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
     };
     Message.startMessage = function (builder) {
-        builder.startObject(4);
-    };
-    Message.addHeader = function (builder, header) {
-        builder.addFieldInt64(0, header, builder.createLong(0, 0));
+        builder.startObject(3);
     };
     Message.addUpdates = function (builder, updatesOffset) {
-        builder.addFieldOffset(1, updatesOffset, 0);
+        builder.addFieldOffset(0, updatesOffset, 0);
     };
     Message.createUpdatesVector = function (builder, data) {
         builder.startVector(4, data.length, 4);
@@ -71,7 +64,7 @@ var Message = /** @class */ (function () {
         builder.startVector(4, numElems, 4);
     };
     Message.addDeletes = function (builder, deletesOffset) {
-        builder.addFieldOffset(2, deletesOffset, 0);
+        builder.addFieldOffset(1, deletesOffset, 0);
     };
     Message.createDeletesVector = function (builder, data) {
         builder.startVector(4, data.length, 4);
@@ -84,7 +77,7 @@ var Message = /** @class */ (function () {
         builder.startVector(4, numElems, 4);
     };
     Message.addCustoms = function (builder, customsOffset) {
-        builder.addFieldOffset(3, customsOffset, 0);
+        builder.addFieldOffset(2, customsOffset, 0);
     };
     Message.createCustomsVector = function (builder, data) {
         builder.startVector(4, data.length, 4);
@@ -106,19 +99,17 @@ var Message = /** @class */ (function () {
     Message.finishSizePrefixedMessageBuffer = function (builder, offset) {
         builder.finish(offset, undefined, true);
     };
-    Message.createMessage = function (builder, header, updatesOffset, deletesOffset, customsOffset) {
+    Message.createMessage = function (builder, updatesOffset, deletesOffset, customsOffset) {
         Message.startMessage(builder);
-        Message.addHeader(builder, header);
         Message.addUpdates(builder, updatesOffset);
         Message.addDeletes(builder, deletesOffset);
         Message.addCustoms(builder, customsOffset);
         return Message.endMessage(builder);
     };
     Message.prototype.unpack = function () {
-        return new MessageT(this.header(), this.bb.createObjList(this.updates.bind(this), this.updatesLength()), this.bb.createObjList(this.deletes.bind(this), this.deletesLength()), this.bb.createObjList(this.customs.bind(this), this.customsLength()));
+        return new MessageT(this.bb.createObjList(this.updates.bind(this), this.updatesLength()), this.bb.createObjList(this.deletes.bind(this), this.deletesLength()), this.bb.createObjList(this.customs.bind(this), this.customsLength()));
     };
     Message.prototype.unpackTo = function (_o) {
-        _o.header = this.header();
         _o.updates = this.bb.createObjList(this.updates.bind(this), this.updatesLength());
         _o.deletes = this.bb.createObjList(this.deletes.bind(this), this.deletesLength());
         _o.customs = this.bb.createObjList(this.customs.bind(this), this.customsLength());
@@ -127,12 +118,10 @@ var Message = /** @class */ (function () {
 }());
 exports.Message = Message;
 var MessageT = /** @class */ (function () {
-    function MessageT(header, updates, deletes, customs) {
-        if (header === void 0) { header = flatbuffers.createLong(0, 0); }
+    function MessageT(updates, deletes, customs) {
         if (updates === void 0) { updates = []; }
         if (deletes === void 0) { deletes = []; }
         if (customs === void 0) { customs = []; }
-        this.header = header;
         this.updates = updates;
         this.deletes = deletes;
         this.customs = customs;
@@ -141,7 +130,7 @@ var MessageT = /** @class */ (function () {
         var updates = Message.createUpdatesVector(builder, builder.createObjectOffsetList(this.updates));
         var deletes = Message.createDeletesVector(builder, builder.createObjectOffsetList(this.deletes));
         var customs = Message.createCustomsVector(builder, builder.createObjectOffsetList(this.customs));
-        return Message.createMessage(builder, this.header, updates, deletes, customs);
+        return Message.createMessage(builder, updates, deletes, customs);
     };
     return MessageT;
 }());

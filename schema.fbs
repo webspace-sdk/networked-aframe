@@ -25,7 +25,6 @@ table CustomOp {
 }
 
 table Message {
-  header: uint64;
   updates:[UpdateOp];
   deletes:[DeleteOp];
   customs:[CustomOp];
