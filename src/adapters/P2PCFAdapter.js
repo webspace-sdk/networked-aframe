@@ -1,6 +1,7 @@
 /* globals CustomEvent, MediaStream, RTCRtpSender, performance, TransformStream */
 const P2PCF = require('p2pcf').default
 const sdpTransform = require('sdp-transform')
+const { EventTarget } = require('event-target-shim')
 
 // If the browser supports insertable streams, we insert a 5 byte payload at the end of the voice
 // frame encoding 4 magic bytes and 1 viseme byte. This is a hack because on older browsers
@@ -33,7 +34,7 @@ const sdpTransformConfigureCodecs = sdp => {
   return sdpTransform.write(parsedSdp)
 }
 
-class P2PCFAdapter {
+class P2PCFAdapter extends EventEmitter {
   constructor () {
     this.room = null
     this.app = null
@@ -101,7 +102,7 @@ class P2PCFAdapter {
           switch (track.kind) {
             case 'video':
               this.videoTracks.set(peer.client_id, track)
-              document.body.dispatchEvent(new CustomEvent('video_stream_changed', { detail: { peerId: peer.client_id } }))
+              this.dispatchEvent(new CustomEvent('video_stream_changed', { detail: { peerId: peer.client_id } }))
               if (supportsInsertableStreams) {
                 const receiverStreams = receiver.createEncodedStreams()
                 receiverStreams.readable.pipeTo(receiverStreams.writable)
@@ -153,7 +154,7 @@ class P2PCFAdapter {
                 const receiverStreams = receiver.createEncodedStreams()
                 receiverStreams.readable.pipeThrough(receiverTransform).pipeTo(receiverStreams.writable)
               }
-              document.body.dispatchEvent(new CustomEvent('audio_stream_changed', { detail: { peerId: peer.client_id } }))
+              this.dispatchEvent(new CustomEvent('audio_stream_changed', { detail: { peerId: peer.client_id } }))
               break
           }
 
@@ -239,7 +240,9 @@ class P2PCFAdapter {
       let oldStream = this.localMediaStream
       this.localMediaStream = stream
 
-      for (const track in stream.getTracks()) {
+      for (const track of stream.getTracks()) {
+        const map = (track.kind === 'audio' ? this.audioTracks : this.videoTracks)
+        map.set(this.clientId, track)
         this.resolvePendingMediaRequestForTrack(this.clientId, track)
       }
 
