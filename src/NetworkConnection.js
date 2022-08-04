@@ -112,8 +112,12 @@ class NetworkConnection {
     return this.activeDataChannels.hasOwnProperty(clientId) && this.activeDataChannels[clientId]
   }
 
-  broadcastData (data) {
-    this.adapter.broadcastData(data)
+  broadcastData (data, guaranteed = false) {
+    if (guaranteed) {
+      this.adapter.broadcastData(data)
+    } else {
+      this.adapter.broadcastDataGuaranteed(data)
+    }
   }
 
   broadcastDataGuaranteed (data) {
@@ -134,7 +138,7 @@ class NetworkConnection {
     this.broadcastCustomData(dataType, customData, true)
   }
 
-  sendData (data, toClientId, guaranteed) {
+  sendData (data, toClientId, guaranteed = false) {
     if (this.hasActiveDataChannel(toClientId)) {
       if (guaranteed) {
         this.adapter.sendDataGuaranteed(data, toClientId)

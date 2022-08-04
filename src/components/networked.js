@@ -40,6 +40,8 @@ const flatbuilder = new Builder(1024)
 // Flexbuffer builder
 const flexbuilder = new flexbuffers.builder() // eslint-disable-line
 
+const tmpTargetClientIds = new Set()
+
 // Don't dedup because we want to re-use builder
 flexbuilder.dedupStrings = false
 flexbuilder.dedupKeys = false
@@ -230,6 +232,10 @@ AFRAME.registerSystem('networked', {
     let send = false
     let sendGuaranteed = false
 
+    // Target client ids for direct full syncs or will have null if a broadcast
+    // of a normal update is needed.
+    tmpTargetClientIds.clear()
+
     for (let i = 0, l = this.components.length; i < l; i++) {
       const c = this.components[i]
 
@@ -243,9 +249,14 @@ AFRAME.registerSystem('networked', {
 
       let isFull = false
 
-      if (c.pendingFullSync) {
+      if (c.pendingFullSyncTargetClients.size > 0) {
         isFull = true
-        c.pendingFullSync = false
+
+        for (const clientId of c.pendingFullSyncTargetClients) {
+          tmpTargetClientIds.add(clientId)
+        }
+
+        c.pendingFullSyncTargetClients.clear()
       }
 
       resetFlexBuilder()
@@ -272,6 +283,9 @@ AFRAME.registerSystem('networked', {
            c.data.persistent,
            flatbuilder.createSharedString(c.getParentId())
          )
+      } else {
+        // Add null client id to ensure a broadcast of partial updates
+        tmpTargetClientIds.add(null)
       }
 
       const networkIdOffset = flatbuilder.createSharedString(c.data.networkId)
@@ -298,10 +312,12 @@ AFRAME.registerSystem('networked', {
 
       flatbuilder.finish(messageOffset)
 
-      if (sendGuaranteed) {
-        NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array())
+      if (tmpTargetClientIds.has(null)) {
+        NAF.connection.broadcastData(flatbuilder.asUint8Array(), sendGuaranteed)
       } else {
-        NAF.connection.broadcastData(flatbuilder.asUint8Array())
+        for (const clientId of tmpTargetClientIds) {
+          NAF.connection.sendData(flatbuilder.asUint8Array(), clientId, sendGuaranteed)
+        }
       }
     }
 
@@ -342,7 +358,7 @@ AFRAME.registerComponent('networked', {
     this.conversionEuler = new THREE.Euler()
     this.conversionEuler.order = 'YXZ'
     this.lerpers = []
-    this.pendingFullSync = false
+    this.pendingFullSyncTargetClients = new Set()
     this.lastErrorLoggedAt = 0
     this.pendingConsumeFirstUpdate = false
 
@@ -516,9 +532,9 @@ AFRAME.registerComponent('networked', {
 
   /* Sending updates */
 
-  syncAll: function () {
+  syncAll: function (targetClientId = null) {
     if (!this.canSync()) return
-    this.pendingFullSync = true
+    this.pendingFullSyncTargetClients.add(targetClientId)
   },
 
   getCachedElement (componentSchemaIndex) {

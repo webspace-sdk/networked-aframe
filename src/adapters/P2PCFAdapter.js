@@ -212,9 +212,12 @@ class P2PCFAdapter extends EventTarget {
   }
 
   sendData (data, toClientId) {
-    const peer = this.p2pcf.peers.get(toClientId)
-    if (!peer) return
-    this.p2pcf.send(peer, data)
+    for (const peer of this.p2pcf.peers.values()) {
+      if (peer.client_id === toClientId) {
+        this.p2pcf.send(peer, data)
+        break
+      }
+    }
   }
 
   sendDataGuaranteed (data, toClientId) {
