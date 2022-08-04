@@ -1,4 +1,4 @@
-/* globals CustomEvent, MediaStream, RTCRtpSender, performance */
+/* globals CustomEvent, MediaStream, RTCRtpSender, performance, TransformStream */
 const P2PCF = require('p2pcf').default
 const sdpTransform = require('sdp-transform')
 
@@ -6,7 +6,7 @@ const sdpTransform = require('sdp-transform')
 // frame encoding 4 magic bytes and 1 viseme byte. This is a hack because on older browsers
 // this data will be injested into the codec, but since the values are near zero it seems to have
 // minimal effect. (Eventually all browsers will support insertable streams.)
-const supportsInsertableStreams = !!(window.RTCRtpSender && !!RTCRtpSender.prototype.createEncodedStreams)
+const supportsInsertableStreams = (window.RTCRtpSender && !!RTCRtpSender.prototype.createEncodedStreams)
 const visemeMagicBytes = [0x00, 0x00, 0x00, 0x01] // Bytes to add to end of frame to indicate a viseme will follow
 
 const rtcPeerConnectionProprietaryConstraints = {
@@ -44,6 +44,7 @@ class P2PCFAdapter {
     this.pendingMediaRequests = new Map()
     this.visemeMap = new Map()
     this.visemeTimestamps = new Map()
+    this.micEnabled = false
     this.type = 'p2pcf'
   }
 
@@ -84,8 +85,8 @@ class P2PCFAdapter {
         {
           rtcPeerConnectionOptions: {
             rtcpMuxPolicy: 'require',
-            sdpSemantics: 'unified-plan'
-            // encodedInsertableStreams: supportsInsertableStreams
+            sdpSemantics: 'unified-plan',
+            encodedInsertableStreams: supportsInsertableStreams
           },
           rtcPeerConnectionProprietaryConstraints,
           fastPollingRateMs: 250,
@@ -95,14 +96,62 @@ class P2PCFAdapter {
       this.p2pcf.on('peerconnect', (peer) => {
         this.onDataChannelOpen(peer.client_id)
 
-        peer.on('track', track => {
+        peer.on('track', (track, stream, receiver) => {
           switch (track.kind) {
             case 'video':
               this.videoTracks.set(peer.id, track)
               document.body.dispatchEvent(new CustomEvent('video_stream_changed', { detail: { peerId: peer.client_id } }))
+              if (supportsInsertableStreams) {
+                const receiverStreams = receiver.createEncodedStreams()
+                receiverStreams.readable.pipeTo(receiverStreams.writable)
+              }
               break
             case 'audio':
               this.audioTracks.set(peer.id, track)
+
+              if (supportsInsertableStreams) {
+                // Add viseme decoder
+                const self = this
+
+                const receiverTransform = new TransformStream({
+                  start () {},
+                  flush () {},
+
+                  async transform (encodedFrame, controller) {
+                    if (encodedFrame.data.byteLength < visemeMagicBytes.length + 1) {
+                      controller.enqueue(encodedFrame)
+                    } else {
+                      const view = new DataView(encodedFrame.data)
+                      let hasViseme = true
+
+                      for (let i = 0, l = visemeMagicBytes.length; i < l; i++) {
+                        if (
+                          view.getUint8(encodedFrame.data.byteLength - 1 - visemeMagicBytes.length + i) !==
+                          visemeMagicBytes[i]
+                        ) {
+                          hasViseme = false
+                        }
+                      }
+
+                      if (hasViseme) {
+                        const viseme = view.getInt8(encodedFrame.data.byteLength - 1)
+                        self.visemeMap.set(peer.client_id, viseme)
+                        self.visemeTimestamps.set(peer.client_id, performance.now())
+
+                        encodedFrame.data = encodedFrame.data.slice(
+                          0,
+                          encodedFrame.data.byteLength - 1 - visemeMagicBytes.length
+                        )
+                      }
+
+                      controller.enqueue(encodedFrame)
+                    }
+                  }
+                })
+
+                const receiverStreams = receiver.createEncodedStreams()
+                receiverStreams.readable.pipeThrough(receiverTransform).pipeTo(receiverStreams.writable)
+              }
               document.body.dispatchEvent(new CustomEvent('audio_stream_changed', { detail: { peerId: peer.client_id } }))
               break
           }
@@ -200,7 +249,7 @@ class P2PCFAdapter {
   }
 
   enableMicrophone (enabled) {
-    console.log('enabled mic', enabled)
+    this.micEnabled = enabled
   }
 
   removePeerTracksForLocalMediaStream () {
@@ -235,6 +284,57 @@ class P2PCFAdapter {
       for (const track of tracks) {
         if (peer._senderMap.has(track)) continue
         peer.addTrack(track, stream)
+
+        const sender = peer._senderMap.get(track).get(stream)
+
+        if (track.kind === 'audio') {
+          if (supportsInsertableStreams) {
+            const self = this
+
+            // Add viseme encoder
+            const senderTransform = new TransformStream({
+              start () {
+                // Called on startup.
+              },
+
+              async transform (encodedFrame, controller) {
+                if (encodedFrame.data.byteLength < 2) {
+                  controller.enqueue(encodedFrame)
+                  return
+                }
+
+                // Create a new buffer with 1 byte for viseme.
+                const newData = new ArrayBuffer(encodedFrame.data.byteLength + 1 + visemeMagicBytes.length)
+                const arr = new Uint8Array(newData)
+                arr.set(new Uint8Array(encodedFrame.data), 0)
+
+                for (let i = 0, l = visemeMagicBytes.length; i < l; i++) {
+                  arr[encodedFrame.data.byteLength + i] = visemeMagicBytes[i]
+                }
+
+                if (self.outgoingVisemeBuffer) {
+                  const viseme = self.micEnabled ? self.outgoingVisemeBuffer[0] : 0
+                  arr[encodedFrame.data.byteLength + visemeMagicBytes.length] = viseme
+                  self.visemeMap.set(self.clientId, viseme)
+                  self.visemeTimestamps.set(self.clientId, performance.now())
+                }
+
+                encodedFrame.data = newData
+                controller.enqueue(encodedFrame)
+              },
+
+              flush () {
+                      // Called when the stream is about to be closed.
+              }
+            })
+
+            const senderStreams = sender.createEncodedStreams()
+            senderStreams.readable.pipeThrough(senderTransform).pipeTo(senderStreams.writable)
+          }
+        } else {
+          const senderStreams = sender.createEncodedStreams()
+          senderStreams.readable.pipeTo(senderStreams.writable)
+        }
       }
     }
   }
@@ -264,14 +364,6 @@ class P2PCFAdapter {
       promise.catch(e => console.warn(`${clientId} getMediaStream Error`, e))
       return promise
     }
-  }
-
-  setOutgoingVisemeBuffer () {
-
-  }
-
-  getCurrentViseme () {
-
   }
 
   block () {
