@@ -21,7 +21,7 @@ table DeleteOp {
 
 table CustomOp {
   data_type:string (required);
-  payload:string (required);
+  payload:[ubyte] (required);
 }
 
 table Message {

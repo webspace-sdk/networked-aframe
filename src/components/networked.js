@@ -11,6 +11,7 @@ const DEG2RAD = THREE.Math.DEG2RAD
 const OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale']
 const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper')
 const { hexToBytes, bytesToHex } = require('../utils')
+const { decode: messagepackDecode } = require('messagepack')
 
 const tmpPosition = new THREE.Vector3()
 const tmpQuaternion = new THREE.Quaternion()
@@ -222,7 +223,7 @@ AFRAME.registerSystem('networked', {
         const dataType = customRef.dataType()
 
         if (NAF.connection.dataChannelSubs[dataType]) {
-          NAF.connection.dataChannelSubs[dataType](dataType, JSON.parse(customRef.payload()))
+          NAF.connection.dataChannelSubs[dataType](dataType, messagepackDecode(customRef.payloadArray()))
         }
       }
     }

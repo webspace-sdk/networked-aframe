@@ -1,6 +1,7 @@
 /* global AFRAME, NAF, CustomEvent, fetch */
 
 const { Builder } = require('flatbuffers/js/builder')
+const { encode: messagepackEncode } = require('messagepack')
 
 var ReservedDataType = { Update: 'u', Remove: 'r' }
 
@@ -159,7 +160,7 @@ class NetworkConnection {
 
     const customOffset = FBCustomOp.createCustomOp(flatbuilder,
       flatbuilder.createSharedString(dataType),
-      flatbuilder.createString(JSON.stringify(customData))
+      FBCustomOp.createPayloadVector(flatbuilder, messagepackEncode(customData))
     )
 
     const customsOffset = FBMessage.createCustomsVector(flatbuilder, [customOffset])
