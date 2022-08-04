@@ -34,8 +34,10 @@ const sdpTransformConfigureCodecs = sdp => {
   return sdpTransform.write(parsedSdp)
 }
 
-class P2PCFAdapter extends EventEmitter {
+class P2PCFAdapter extends EventTarget {
   constructor () {
+    super()
+
     this.room = null
     this.app = null
     this.clientId = null
