@@ -223,7 +223,7 @@ AFRAME.registerSystem('networked', {
         const dataType = customRef.dataType()
 
         if (NAF.connection.dataChannelSubs[dataType]) {
-          NAF.connection.dataChannelSubs[dataType](dataType, messagepackDecode(customRef.payloadArray()))
+          NAF.connection.dataChannelSubs[dataType](dataType, messagepackDecode(customRef.payloadArray()), sender)
         }
       }
     }
