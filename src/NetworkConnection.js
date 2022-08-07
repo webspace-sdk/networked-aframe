@@ -31,8 +31,8 @@ const { decode: messagepackDecode } = require('messagepack')
 const NUMBER_OF_SERVER_TIME_REQUESTS = 5
 
 const presenceClientIdforNafClientId = (presence, nafClientId) => {
-  for (const [presenceClientId, { clientId }] of presence.states.entries()) {
-    if (clientId === nafClientId) return presenceClientId
+  for (const [presenceClientId, { client_id }] of presence.states.entries()) {
+    if (client_id === nafClientId) return presenceClientId
   }
 
   return null
