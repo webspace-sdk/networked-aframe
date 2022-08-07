@@ -45,10 +45,7 @@ table PresenceUpdate {
   update:[ubyte];
 }
 
-table PresenceUpdateRequest {
-}
-
-union MessageData { SceneUpdate, CustomOp, DocSyncRequest, DocSyncResponse, DocUpdate, PresenceUpdate, PresenceUpdateRequest }
+union MessageData { SceneUpdate, CustomOp, DocSyncRequest, DocSyncResponse, DocUpdate, PresenceUpdate }
 
 table Message {
   data: MessageData (required);

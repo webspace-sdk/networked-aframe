@@ -7,7 +7,6 @@ var doc_sync_request_1 = require("../networked-aframe/doc-sync-request");
 var doc_sync_response_1 = require("../networked-aframe/doc-sync-response");
 var doc_update_1 = require("../networked-aframe/doc-update");
 var presence_update_1 = require("../networked-aframe/presence-update");
-var presence_update_request_1 = require("../networked-aframe/presence-update-request");
 var scene_update_1 = require("../networked-aframe/scene-update");
 var MessageData;
 (function (MessageData) {
@@ -18,7 +17,6 @@ var MessageData;
     MessageData[MessageData["DocSyncResponse"] = 4] = "DocSyncResponse";
     MessageData[MessageData["DocUpdate"] = 5] = "DocUpdate";
     MessageData[MessageData["PresenceUpdate"] = 6] = "PresenceUpdate";
-    MessageData[MessageData["PresenceUpdateRequest"] = 7] = "PresenceUpdateRequest";
 })(MessageData = exports.MessageData || (exports.MessageData = {}));
 function unionToMessageData(type, accessor) {
     switch (MessageData[type]) {
@@ -29,7 +27,6 @@ function unionToMessageData(type, accessor) {
         case 'DocSyncResponse': return accessor(new doc_sync_response_1.DocSyncResponse());
         case 'DocUpdate': return accessor(new doc_update_1.DocUpdate());
         case 'PresenceUpdate': return accessor(new presence_update_1.PresenceUpdate());
-        case 'PresenceUpdateRequest': return accessor(new presence_update_request_1.PresenceUpdateRequest());
         default: return null;
     }
 }
@@ -43,7 +40,6 @@ function unionListToMessageData(type, accessor, index) {
         case 'DocSyncResponse': return accessor(index, new doc_sync_response_1.DocSyncResponse());
         case 'DocUpdate': return accessor(index, new doc_update_1.DocUpdate());
         case 'PresenceUpdate': return accessor(index, new presence_update_1.PresenceUpdate());
-        case 'PresenceUpdateRequest': return accessor(index, new presence_update_request_1.PresenceUpdateRequest());
         default: return null;
     }
 }

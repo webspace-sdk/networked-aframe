@@ -3,6 +3,8 @@
 const { Builder } = require('flatbuffers/js/builder')
 const { encode: messagepackEncode } = require('messagepack')
 const { ByteBuffer } = require('flatbuffers/js/byte-buffer')
+const Y = require('yjs')
+const { encodeAwarenessUpdate, applyAwarenessUpdate } = require('y-protocols/awareness')
 
 var ReservedDataType = { Update: 'u', Remove: 'r' }
 
@@ -12,7 +14,11 @@ const flatbuilder = new Builder(1024)
 const FBMessage = require('./schema/networked-aframe/message').Message
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp
 const FBMessageData = require('./schema/networked-aframe/message-data').MessageData
+const FBDocSyncRequest = require('./schema/networked-aframe/doc-sync-request').DocSyncRequest
+const FBPresenceUpdate = require('./schema/networked-aframe/presence-update').PresenceUpdate
+
 const messageRef = new FBMessage()
+const presenceUpdateRef = new FBPresenceUpdate()
 const customRef = new FBCustomOp()
 
 const { decode: messagepackDecode } = require('messagepack')
@@ -35,10 +41,14 @@ class NetworkConnection {
     this.adapter = adapter
   }
 
-  connect (appName, roomName, doc, enableAudio = false) {
+  connect (appName, roomName, doc, presence, enableAudio = false) {
     NAF.app = appName
     NAF.room = roomName
     NAF.doc = doc
+    NAF.presence = presence
+
+    this.doc = doc
+    this.presence = presence
 
     this.adapter.setApp(appName)
 
@@ -72,6 +82,8 @@ class NetworkConnection {
     NAF.log.write('Networked-Aframe Client ID:', clientId)
     NAF.clientId = clientId
 
+    this.presence.setLocalState({ clientId })
+
     var evt = new CustomEvent('connected', {'detail': { clientId: clientId }})
     document.body.dispatchEvent(evt)
   }
@@ -104,9 +116,10 @@ class NetworkConnection {
     NAF.log.write('Opened data channel from ' + clientId)
     this.activeDataChannels[clientId] = true
     this.entities.completeSync(clientId, true)
+    this.sendDocSyncRequest(clientId)
+    this.sendPresenceUpdate(clientId)
 
-    var evt = new CustomEvent('clientConnected', {detail: {clientId: clientId}})
-    document.body.dispatchEvent(evt)
+    document.body.dispatchEvent(new CustomEvent('clientConnected', {detail: {clientId: clientId}}))
   }
 
   dataChannelClosed (clientId) {
@@ -206,10 +219,18 @@ class NetworkConnection {
 
   // Returns true if a new entity was created
   receivedData (data, sender) {
+    const { presence } = this
+
     FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef)
+
     switch (messageRef.dataType()) {
       case FBMessageData.SceneUpdate: {
         AFRAME.scenes[0].systems.networked.enqueueIncoming(data, sender)
+        break
+      }
+      case FBMessageData.PresenceUpdate: {
+        messageRef.data(presenceUpdateRef)
+        applyAwarenessUpdate(presence, presenceUpdateRef.updateArray(), sender)
         break
       }
       case FBMessageData.CustomOp: {
@@ -280,6 +301,37 @@ class NetworkConnection {
         }
       })
     })
+  }
+
+  sendDocSyncRequest (toClientId) {
+    flatbuilder.clear()
+
+    const encodedStateVector = Y.encodeStateVector(this.doc)
+
+    flatbuilder.finish(
+        FBMessage.createMessage(flatbuilder, FBMessageData.DocSyncRequest,
+          FBDocSyncRequest.createDocSyncRequest(flatbuilder,
+            FBDocSyncRequest.createEncodedStateVectorVector(flatbuilder, encodedStateVector)
+          )
+        )
+      )
+
+    this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
+  }
+
+  sendPresenceUpdate (toClientId) {
+    flatbuilder.clear()
+
+    flatbuilder.finish(
+        FBMessage.createMessage(flatbuilder, FBMessageData.PresenceUpdate,
+          FBPresenceUpdate.createPresenceUpdate(flatbuilder,
+            FBPresenceUpdate.createUpdateVector(flatbuilder,
+encodeAwarenessUpdate(this.presence, Array.from(this.presence.getStates().keys())))
+          )
+        )
+      )
+
+    this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
   }
 }
 

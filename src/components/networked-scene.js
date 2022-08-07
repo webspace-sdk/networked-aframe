@@ -1,6 +1,7 @@
 /* global AFRAME, NAF */
 
 const Y = require('yjs')
+const { Awareness } = require('y-protocols/awareness')
 
 AFRAME.registerComponent('networked-scene', {
   schema: {
@@ -30,6 +31,7 @@ AFRAME.registerComponent('networked-scene', {
     NAF.log.write('Networked-Aframe Connecting...')
 
     this.doc = new Y.Doc()
+    this.presence = new Awareness(this.doc)
     this.checkDeprecatedProperties()
     this.setupNetworkAdapter()
 
@@ -37,9 +39,7 @@ AFRAME.registerComponent('networked-scene', {
       this.callOnConnect()
     }
 
-    this.doc = new Y.Doc()
-
-    return NAF.connection.connect(this.data.app, this.data.room, this.doc, this.data.audio)
+    return NAF.connection.connect(this.data.app, this.data.room, this.doc, this.presence, this.data.audio)
   },
 
   checkDeprecatedProperties: function () {
