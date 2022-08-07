@@ -40,6 +40,9 @@ class NetworkConnection {
     this._avgTimeOffset = 0
     this._serverTimeRequests = 0
     this._timeOffsets = []
+
+    this._onDocUpdate = this._onDocUpdate.bind(this)
+    this._onPresenceUpdate = this._onPresenceUpdate.bind(this)
   }
 
   setNetworkAdapter (adapter) {
@@ -55,20 +58,8 @@ class NetworkConnection {
     this.doc = doc
     this.presence = presence
 
-    this.doc.on('update', (update, origin) => {
-      if (origin !== this) return
-
-      flatbuilder.clear()
-      flatbuilder.finish(
-        FBMessage.createMessage(flatbuilder, FBMessageData.DocUpdate,
-          FBDocUpdate.createDocUpdate(flatbuilder,
-            FBDocUpdate.createUpdateVector(flatbuilder, update)
-          )
-        )
-      )
-
-      this.adapter.broadcastDataGuaranteed(flatbuilder.asUint8Array())
-    })
+    this.doc.on('update', this._onDocUpdate)
+    this.presence.on('update', this._onPresenceUpdate)
 
     this.adapter.setApp(appName)
 
@@ -382,6 +373,41 @@ encodeAwarenessUpdate(this.presence, Array.from(this.presence.getStates().keys()
       )
 
     this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
+  }
+
+  _onDocUpdate (update, origin) {
+    if (origin !== this) return
+
+    flatbuilder.clear()
+    flatbuilder.finish(
+      FBMessage.createMessage(flatbuilder, FBMessageData.DocUpdate,
+        FBDocUpdate.createDocUpdate(flatbuilder,
+          FBDocUpdate.createUpdateVector(flatbuilder, update)
+        )
+      )
+    )
+
+    this.adapter.broadcastDataGuaranteed(flatbuilder.asUint8Array())
+  }
+
+  _onPresenceUpdate ({ added, updated, removed }, origin) {
+    if (origin !== 'local') return
+
+    const { presence, adapter } = this
+
+    const changedClients = added.concat(updated).concat(removed)
+    const update = encodeAwarenessUpdate(presence, changedClients)
+
+    flatbuilder.clear()
+    flatbuilder.finish(
+      FBMessage.createMessage(flatbuilder, FBMessageData.PresenceUpdate,
+        FBPresenceUpdate.createPresenceUpdate(flatbuilder,
+          FBPresenceUpdate.createUpdateVector(flatbuilder, update)
+        )
+      )
+    )
+
+    adapter.broadcastDataGuaranteed(flatbuilder.asUint8Array())
   }
 }
 
