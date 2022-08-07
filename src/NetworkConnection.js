@@ -15,9 +15,14 @@ const FBMessage = require('./schema/networked-aframe/message').Message
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp
 const FBMessageData = require('./schema/networked-aframe/message-data').MessageData
 const FBDocSyncRequest = require('./schema/networked-aframe/doc-sync-request').DocSyncRequest
+const FBDocSyncResponse = require('./schema/networked-aframe/doc-sync-response').DocSyncResponse
+const FBDocUpdate = require('./schema/networked-aframe/doc-update').DocUpdate
 const FBPresenceUpdate = require('./schema/networked-aframe/presence-update').PresenceUpdate
 
 const messageRef = new FBMessage()
+const docSyncRequestRef = new FBDocSyncRequest()
+const docSyncResponseRef = new FBDocSyncResponse()
+const docUpdateRef = new FBDocUpdate()
 const presenceUpdateRef = new FBPresenceUpdate()
 const customRef = new FBCustomOp()
 
@@ -49,6 +54,21 @@ class NetworkConnection {
 
     this.doc = doc
     this.presence = presence
+
+    this.doc.on('update', (update, origin) => {
+      if (origin !== this) return
+
+      flatbuilder.clear()
+      flatbuilder.finish(
+        FBMessage.createMessage(flatbuilder, FBMessageData.DocUpdate,
+          FBDocUpdate.createDocUpdate(flatbuilder,
+            FBDocUpdate.createUpdateVector(flatbuilder, update)
+          )
+        )
+      )
+
+      this.adapter.broadcastDataGuaranteed(flatbuilder.asUint8Array())
+    })
 
     this.adapter.setApp(appName)
 
@@ -219,7 +239,7 @@ class NetworkConnection {
 
   // Returns true if a new entity was created
   receivedData (data, sender) {
-    const { presence } = this
+    const { presence, doc, adapter } = this
 
     FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef)
 
@@ -231,6 +251,36 @@ class NetworkConnection {
       case FBMessageData.PresenceUpdate: {
         messageRef.data(presenceUpdateRef)
         applyAwarenessUpdate(presence, presenceUpdateRef.updateArray(), sender)
+        break
+      }
+      case FBMessageData.DocSyncRequest: {
+        messageRef.data(docSyncRequestRef)
+        const stateVector = docSyncRequestRef.encodedStateVectorArray()
+        const update = Y.encodeStateAsUpdate(doc, stateVector)
+
+        flatbuilder.clear()
+        flatbuilder.finish(
+          FBMessage.createMessage(flatbuilder, FBMessageData.DocSyncResponse,
+            FBDocSyncResponse.createDocSyncResponse(flatbuilder,
+              FBDocSyncResponse.createUpdateVector(flatbuilder, update)
+            )
+          )
+        )
+
+        adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), sender)
+
+        break
+      }
+      case FBMessageData.DocSyncResponse: {
+        messageRef.data(docSyncResponseRef)
+        Y.applyUpdate(doc, docSyncResponseRef.updateArray())
+
+        break
+      }
+      case FBMessageData.DocUpdate: {
+        messageRef.data(docUpdateRef)
+        Y.applyUpdate(doc, docUpdateRef.updateArray())
+
         break
       }
       case FBMessageData.CustomOp: {
