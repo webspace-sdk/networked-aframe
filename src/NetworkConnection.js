@@ -4,7 +4,7 @@ const { Builder } = require('flatbuffers/js/builder')
 const { encode: messagepackEncode } = require('messagepack')
 const { ByteBuffer } = require('flatbuffers/js/byte-buffer')
 const Y = require('yjs')
-const { encodeAwarenessUpdate, applyAwarenessUpdate } = require('y-protocols/awareness')
+const { encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } = require('y-protocols/awareness')
 
 var ReservedDataType = { Update: 'u', Remove: 'r' }
 
@@ -29,6 +29,14 @@ const customRef = new FBCustomOp()
 const { decode: messagepackDecode } = require('messagepack')
 
 const NUMBER_OF_SERVER_TIME_REQUESTS = 5
+
+const presenceClientIdforNafClientId = (presence, nafClientId) => {
+  for (const [presenceClientId, { clientId }] of presence.states.entries()) {
+    if (clientId === nafClientId) return presenceClientId
+  }
+
+  return null
+}
 
 class NetworkConnection {
   constructor (networkEntities) {
@@ -137,6 +145,12 @@ class NetworkConnection {
     NAF.log.write('Closed data channel from ' + clientId)
     this.activeDataChannels[clientId] = false
     this.entities.removeEntitiesOfClient(clientId)
+
+    const presenceId = presenceClientIdforNafClientId(this.presence, clientId)
+
+    if (presenceId) {
+      removeAwarenessStates(this.presence, [presenceId], 'disconnect')
+    }
 
     var evt = new CustomEvent('clientDisconnected', {detail: {clientId: clientId}})
     document.body.dispatchEvent(evt)
@@ -293,7 +307,6 @@ class NetworkConnection {
   disconnect () {
     this.entities.removeRemoteEntities()
     this.adapter.disconnect()
-    this.adapter.disconnect()
 
     NAF.app = ''
     NAF.room = ''
@@ -302,6 +315,14 @@ class NetworkConnection {
     this.adapter = null
     this.adapter = null
     AFRAME.scenes[0].systems.networked.reset()
+
+    if (this.doc) {
+      this.doc.off('update', this._onDocUpdate)
+    }
+
+    if (this.presence) {
+      this.presence.off('update', this._onPresenceUpdate)
+    }
 
     document.body.removeEventListener('connected', this.onConnectCallback)
   }
