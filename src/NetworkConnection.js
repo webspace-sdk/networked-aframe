@@ -31,8 +31,8 @@ const { decode: messagepackDecode } = require('messagepack')
 const NUMBER_OF_SERVER_TIME_REQUESTS = 5
 
 const presenceClientIdforNafClientId = (presence, nafClientId) => {
-  for (const [presenceClientId, { client_id }] of presence.states.entries()) {
-    if (client_id === nafClientId) return presenceClientId
+  for (const [presenceClientId, { client_id: clientId }] of presence.states.entries()) {
+    if (clientId === nafClientId) return presenceClientId
   }
 
   return null
@@ -83,6 +83,14 @@ class NetworkConnection {
     return this.updateTimeOffset()
       .then(() => this.adapter.connect())
       .then(() => this.adapter.joinRoom(roomName))
+  }
+
+  getPresenceStateForClientId (clientId) {
+    if (!this.presence) return null
+    const presenceId = presenceClientIdforNafClientId(this.presence, clientId)
+    if (!presenceId) return null
+
+    return this.presence.states.get(presenceId)
   }
 
   onConnect (callback) {
