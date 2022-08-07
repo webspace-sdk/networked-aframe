@@ -29,7 +29,26 @@ table SceneUpdate {
   deletes:[DeleteOp];
 }
 
-union MessageData { SceneUpdate, CustomOp }
+table DocSyncRequest {
+  encoded_state_vector:[ubyte];
+}
+
+table DocSyncResponse {
+  update:[ubyte];
+}
+
+table DocUpdate {
+  update:[ubyte];
+}
+
+table PresenceUpdate {
+  update:[ubyte];
+}
+
+table PresenceUpdateRequest {
+}
+
+union MessageData { SceneUpdate, CustomOp, DocSyncRequest, DocSyncResponse, DocUpdate, PresenceUpdate, PresenceUpdateRequest }
 
 table Message {
   data: MessageData (required);

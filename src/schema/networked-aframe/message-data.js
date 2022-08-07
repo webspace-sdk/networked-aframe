@@ -3,18 +3,33 @@
 exports.__esModule = true;
 exports.unionListToMessageData = exports.unionToMessageData = exports.MessageData = void 0;
 var custom_op_1 = require("../networked-aframe/custom-op");
+var doc_sync_request_1 = require("../networked-aframe/doc-sync-request");
+var doc_sync_response_1 = require("../networked-aframe/doc-sync-response");
+var doc_update_1 = require("../networked-aframe/doc-update");
+var presence_update_1 = require("../networked-aframe/presence-update");
+var presence_update_request_1 = require("../networked-aframe/presence-update-request");
 var scene_update_1 = require("../networked-aframe/scene-update");
 var MessageData;
 (function (MessageData) {
     MessageData[MessageData["NONE"] = 0] = "NONE";
     MessageData[MessageData["SceneUpdate"] = 1] = "SceneUpdate";
     MessageData[MessageData["CustomOp"] = 2] = "CustomOp";
+    MessageData[MessageData["DocSyncRequest"] = 3] = "DocSyncRequest";
+    MessageData[MessageData["DocSyncResponse"] = 4] = "DocSyncResponse";
+    MessageData[MessageData["DocUpdate"] = 5] = "DocUpdate";
+    MessageData[MessageData["PresenceUpdate"] = 6] = "PresenceUpdate";
+    MessageData[MessageData["PresenceUpdateRequest"] = 7] = "PresenceUpdateRequest";
 })(MessageData = exports.MessageData || (exports.MessageData = {}));
 function unionToMessageData(type, accessor) {
     switch (MessageData[type]) {
         case 'NONE': return null;
         case 'SceneUpdate': return accessor(new scene_update_1.SceneUpdate());
         case 'CustomOp': return accessor(new custom_op_1.CustomOp());
+        case 'DocSyncRequest': return accessor(new doc_sync_request_1.DocSyncRequest());
+        case 'DocSyncResponse': return accessor(new doc_sync_response_1.DocSyncResponse());
+        case 'DocUpdate': return accessor(new doc_update_1.DocUpdate());
+        case 'PresenceUpdate': return accessor(new presence_update_1.PresenceUpdate());
+        case 'PresenceUpdateRequest': return accessor(new presence_update_request_1.PresenceUpdateRequest());
         default: return null;
     }
 }
@@ -24,6 +39,11 @@ function unionListToMessageData(type, accessor, index) {
         case 'NONE': return null;
         case 'SceneUpdate': return accessor(index, new scene_update_1.SceneUpdate());
         case 'CustomOp': return accessor(index, new custom_op_1.CustomOp());
+        case 'DocSyncRequest': return accessor(index, new doc_sync_request_1.DocSyncRequest());
+        case 'DocSyncResponse': return accessor(index, new doc_sync_response_1.DocSyncResponse());
+        case 'DocUpdate': return accessor(index, new doc_update_1.DocUpdate());
+        case 'PresenceUpdate': return accessor(index, new presence_update_1.PresenceUpdate());
+        case 'PresenceUpdateRequest': return accessor(index, new presence_update_request_1.PresenceUpdateRequest());
         default: return null;
     }
 }
