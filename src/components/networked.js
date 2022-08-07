@@ -11,24 +11,26 @@ const DEG2RAD = THREE.Math.DEG2RAD
 const OBJECT3D_COMPONENTS = ['position', 'rotation', 'scale']
 const { Lerper, TYPE_POSITION, TYPE_QUATERNION, TYPE_SCALE } = require('../Lerper')
 const { hexToBytes, bytesToHex } = require('../utils')
-const { decode: messagepackDecode } = require('messagepack')
+// const { decode: messagepackDecode } = require('messagepack')
 
 const tmpPosition = new THREE.Vector3()
 const tmpQuaternion = new THREE.Quaternion()
 
 const FBMessage = require('../schema/networked-aframe/message').Message
+const FBMessageData = require('../schema/networked-aframe/message-data').MessageData
+const FBSceneUpdate = require('../schema/networked-aframe/scene-update').SceneUpdate
 const FBFullUpdateData = require('../schema/networked-aframe/full-update-data').FullUpdateData
 const FBUpdateOp = require('../schema/networked-aframe/update-op').UpdateOp
 const FBDeleteOp = require('../schema/networked-aframe/delete-op').DeleteOp
-const FBCustomOp = require('../schema/networked-aframe/custom-op').CustomOp
+// const FBCustomOp = require('../schema/networked-aframe/custom-op').CustomOp
 
 const clientIdByteBuf = []
 const opOffsetBuf = []
-const fullUpdateDataRef = new FBFullUpdateData()
 const messageRef = new FBMessage()
+const fullUpdateDataRef = new FBFullUpdateData()
+const sceneUpdateRef = new FBSceneUpdate()
 const updateRef = new FBUpdateOp()
 const deleteRef = new FBDeleteOp()
-const customRef = new FBCustomOp()
 const tmpLong = new Long(0, 0)
 
 const MAX_AWAIT_INSTANTIATION_MS = 10000
@@ -152,11 +154,13 @@ AFRAME.registerSystem('networked', {
       const sender = incomingSenders.shift()
 
       FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef)
+      messageRef.data(sceneUpdateRef)
+
       const now = performance.now()
 
       // Do a pass over the updates first to determine if this message should be skipped + requeued
-      for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
-        messageRef.updates(i, updateRef)
+      for (let i = 0, l = sceneUpdateRef.updatesLength(); i < l; i++) {
+        sceneUpdateRef.updates(i, updateRef)
 
         const networkId = updateRef.networkId()
         const hasInstantiatedEntity = NAF.entities.hasEntity(networkId)
@@ -208,23 +212,14 @@ AFRAME.registerSystem('networked', {
         }
       }
 
-      for (let i = 0, l = messageRef.updatesLength(); i < l; i++) {
-        messageRef.updates(i, updateRef)
+      for (let i = 0, l = sceneUpdateRef.updatesLength(); i < l; i++) {
+        sceneUpdateRef.updates(i, updateRef)
         NAF.entities.updateEntity(updateRef, sender)
       }
 
-      for (let i = 0, l = messageRef.deletesLength(); i < l; i++) {
-        messageRef.deletes(i, deleteRef)
+      for (let i = 0, l = sceneUpdateRef.deletesLength(); i < l; i++) {
+        sceneUpdateRef.deletes(i, deleteRef)
         NAF.entities.removeRemoteEntity(deleteRef, sender)
-      }
-
-      for (let i = 0, l = messageRef.customsLength(); i < l; i++) {
-        messageRef.customs(i, customRef)
-        const dataType = customRef.dataType()
-
-        if (NAF.connection.dataChannelSubs[dataType]) {
-          NAF.connection.dataChannelSubs[dataType](dataType, messagepackDecode(customRef.payloadArray()), sender)
-        }
       }
     }
   },
@@ -306,12 +301,15 @@ AFRAME.registerSystem('networked', {
     }
 
     if (send) {
-      const updatesOffset = FBMessage.createUpdatesVector(flatbuilder, opOffsetBuf)
-      FBMessage.startMessage(flatbuilder)
-      FBMessage.addUpdates(flatbuilder, updatesOffset)
-      const messageOffset = FBMessage.endMessage(flatbuilder)
+      const updatesOffset = FBSceneUpdate.createUpdatesVector(flatbuilder, opOffsetBuf)
+      FBSceneUpdate.startSceneUpdate(flatbuilder)
+      FBSceneUpdate.addUpdates(flatbuilder, updatesOffset)
+      const sceneUpdateOffset = FBSceneUpdate.endSceneUpdate(flatbuilder)
 
-      flatbuilder.finish(messageOffset)
+      flatbuilder.finish(FBMessage.createMessage(
+        flatbuilder, FBMessageData.SceneUpdate,
+        sceneUpdateOffset
+      ))
 
       if (tmpTargetClientIds.has(null)) {
         NAF.connection.broadcastData(flatbuilder.asUint8Array(), sendGuaranteed)
@@ -932,12 +930,15 @@ AFRAME.registerComponent('networked', {
         flatbuilder.clear()
         const networkIdOffset = flatbuilder.createString(this.data.networkId)
         const deleteOffset = FBDeleteOp.createDeleteOp(flatbuilder, networkIdOffset)
-        const deletesOffset = FBMessage.createDeletesVector(flatbuilder, [deleteOffset])
-        FBMessage.startMessage(flatbuilder)
-        FBMessage.addDeletes(flatbuilder, deletesOffset)
-        const messageOffset = FBMessage.endMessage(flatbuilder)
+        const deletesOffset = FBSceneUpdate.createDeletesVector(flatbuilder, [deleteOffset])
+        FBSceneUpdate.startSceneUpdate(flatbuilder)
+        FBSceneUpdate.addDeletes(flatbuilder, deletesOffset)
+        const sceneUpdateOffset = FBSceneUpdate.endSceneUpdate(flatbuilder)
 
-        flatbuilder.finish(messageOffset)
+        flatbuilder.finish(FBMessage.createMessage(
+          flatbuilder, FBMessageData.SceneUpdate,
+          sceneUpdateOffset
+        ))
 
         NAF.connection.broadcastDataGuaranteed(flatbuilder.asUint8Array())
       } else {

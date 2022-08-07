@@ -3,9 +3,7 @@
 exports.__esModule = true;
 exports.MessageT = exports.Message = void 0;
 var flatbuffers = require("flatbuffers");
-var custom_op_1 = require("../networked-aframe/custom-op");
-var delete_op_1 = require("../networked-aframe/delete-op");
-var update_op_1 = require("../networked-aframe/update-op");
+var message_data_1 = require("../networked-aframe/message-data");
 var Message = /** @class */ (function () {
     function Message() {
         this.bb = null;
@@ -23,74 +21,26 @@ var Message = /** @class */ (function () {
         bb.setPosition(bb.position() + flatbuffers.SIZE_PREFIX_LENGTH);
         return (obj || new Message()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
     };
-    Message.prototype.updates = function (index, obj) {
+    Message.prototype.dataType = function () {
         var offset = this.bb.__offset(this.bb_pos, 4);
-        return offset ? (obj || new update_op_1.UpdateOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
+        return offset ? this.bb.readUint8(this.bb_pos + offset) : message_data_1.MessageData.NONE;
     };
-    Message.prototype.updatesLength = function () {
-        var offset = this.bb.__offset(this.bb_pos, 4);
-        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
-    };
-    Message.prototype.deletes = function (index, obj) {
+    Message.prototype.data = function (obj) {
         var offset = this.bb.__offset(this.bb_pos, 6);
-        return offset ? (obj || new delete_op_1.DeleteOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
-    };
-    Message.prototype.deletesLength = function () {
-        var offset = this.bb.__offset(this.bb_pos, 6);
-        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
-    };
-    Message.prototype.customs = function (index, obj) {
-        var offset = this.bb.__offset(this.bb_pos, 8);
-        return offset ? (obj || new custom_op_1.CustomOp()).__init(this.bb.__indirect(this.bb.__vector(this.bb_pos + offset) + index * 4), this.bb) : null;
-    };
-    Message.prototype.customsLength = function () {
-        var offset = this.bb.__offset(this.bb_pos, 8);
-        return offset ? this.bb.__vector_len(this.bb_pos + offset) : 0;
+        return offset ? this.bb.__union(obj, this.bb_pos + offset) : null;
     };
     Message.startMessage = function (builder) {
-        builder.startObject(3);
+        builder.startObject(2);
     };
-    Message.addUpdates = function (builder, updatesOffset) {
-        builder.addFieldOffset(0, updatesOffset, 0);
+    Message.addDataType = function (builder, dataType) {
+        builder.addFieldInt8(0, dataType, message_data_1.MessageData.NONE);
     };
-    Message.createUpdatesVector = function (builder, data) {
-        builder.startVector(4, data.length, 4);
-        for (var i = data.length - 1; i >= 0; i--) {
-            builder.addOffset(data[i]);
-        }
-        return builder.endVector();
-    };
-    Message.startUpdatesVector = function (builder, numElems) {
-        builder.startVector(4, numElems, 4);
-    };
-    Message.addDeletes = function (builder, deletesOffset) {
-        builder.addFieldOffset(1, deletesOffset, 0);
-    };
-    Message.createDeletesVector = function (builder, data) {
-        builder.startVector(4, data.length, 4);
-        for (var i = data.length - 1; i >= 0; i--) {
-            builder.addOffset(data[i]);
-        }
-        return builder.endVector();
-    };
-    Message.startDeletesVector = function (builder, numElems) {
-        builder.startVector(4, numElems, 4);
-    };
-    Message.addCustoms = function (builder, customsOffset) {
-        builder.addFieldOffset(2, customsOffset, 0);
-    };
-    Message.createCustomsVector = function (builder, data) {
-        builder.startVector(4, data.length, 4);
-        for (var i = data.length - 1; i >= 0; i--) {
-            builder.addOffset(data[i]);
-        }
-        return builder.endVector();
-    };
-    Message.startCustomsVector = function (builder, numElems) {
-        builder.startVector(4, numElems, 4);
+    Message.addData = function (builder, dataOffset) {
+        builder.addFieldOffset(1, dataOffset, 0);
     };
     Message.endMessage = function (builder) {
         var offset = builder.endObject();
+        builder.requiredField(offset, 6); // data
         return offset;
     };
     Message.finishMessageBuffer = function (builder, offset) {
@@ -99,38 +49,46 @@ var Message = /** @class */ (function () {
     Message.finishSizePrefixedMessageBuffer = function (builder, offset) {
         builder.finish(offset, undefined, true);
     };
-    Message.createMessage = function (builder, updatesOffset, deletesOffset, customsOffset) {
+    Message.createMessage = function (builder, dataType, dataOffset) {
         Message.startMessage(builder);
-        Message.addUpdates(builder, updatesOffset);
-        Message.addDeletes(builder, deletesOffset);
-        Message.addCustoms(builder, customsOffset);
+        Message.addDataType(builder, dataType);
+        Message.addData(builder, dataOffset);
         return Message.endMessage(builder);
     };
     Message.prototype.unpack = function () {
-        return new MessageT(this.bb.createObjList(this.updates.bind(this), this.updatesLength()), this.bb.createObjList(this.deletes.bind(this), this.deletesLength()), this.bb.createObjList(this.customs.bind(this), this.customsLength()));
+        var _this = this;
+        return new MessageT(this.dataType(), (function () {
+            var temp = (0, message_data_1.unionToMessageData)(_this.dataType(), _this.data.bind(_this));
+            if (temp === null) {
+                return null;
+            }
+            return temp.unpack();
+        })());
     };
     Message.prototype.unpackTo = function (_o) {
-        _o.updates = this.bb.createObjList(this.updates.bind(this), this.updatesLength());
-        _o.deletes = this.bb.createObjList(this.deletes.bind(this), this.deletesLength());
-        _o.customs = this.bb.createObjList(this.customs.bind(this), this.customsLength());
+        var _this = this;
+        _o.dataType = this.dataType();
+        _o.data = (function () {
+            var temp = (0, message_data_1.unionToMessageData)(_this.dataType(), _this.data.bind(_this));
+            if (temp === null) {
+                return null;
+            }
+            return temp.unpack();
+        })();
     };
     return Message;
 }());
 exports.Message = Message;
 var MessageT = /** @class */ (function () {
-    function MessageT(updates, deletes, customs) {
-        if (updates === void 0) { updates = []; }
-        if (deletes === void 0) { deletes = []; }
-        if (customs === void 0) { customs = []; }
-        this.updates = updates;
-        this.deletes = deletes;
-        this.customs = customs;
+    function MessageT(dataType, data) {
+        if (dataType === void 0) { dataType = message_data_1.MessageData.NONE; }
+        if (data === void 0) { data = null; }
+        this.dataType = dataType;
+        this.data = data;
     }
     MessageT.prototype.pack = function (builder) {
-        var updates = Message.createUpdatesVector(builder, builder.createObjectOffsetList(this.updates));
-        var deletes = Message.createDeletesVector(builder, builder.createObjectOffsetList(this.deletes));
-        var customs = Message.createCustomsVector(builder, builder.createObjectOffsetList(this.customs));
-        return Message.createMessage(builder, updates, deletes, customs);
+        var data = builder.createObjectOffset(this.data);
+        return Message.createMessage(builder, this.dataType, data);
     };
     return MessageT;
 }());

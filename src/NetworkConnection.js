@@ -2,6 +2,7 @@
 
 const { Builder } = require('flatbuffers/js/builder')
 const { encode: messagepackEncode } = require('messagepack')
+const { ByteBuffer } = require('flatbuffers/js/byte-buffer')
 
 var ReservedDataType = { Update: 'u', Remove: 'r' }
 
@@ -10,6 +11,12 @@ const flatbuilder = new Builder(1024)
 
 const FBMessage = require('./schema/networked-aframe/message').Message
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp
+const FBMessageData = require('./schema/networked-aframe/message-data').MessageData
+const messageRef = new FBMessage()
+const customRef = new FBCustomOp()
+
+const { decode: messagepackDecode } = require('messagepack')
+
 const NUMBER_OF_SERVER_TIME_REQUESTS = 5
 
 class NetworkConnection {
@@ -28,9 +35,10 @@ class NetworkConnection {
     this.adapter = adapter
   }
 
-  connect (appName, roomName, enableAudio = false) {
+  connect (appName, roomName, doc, enableAudio = false) {
     NAF.app = appName
     NAF.room = roomName
+    NAF.doc = doc
 
     this.adapter.setApp(appName)
 
@@ -38,6 +46,7 @@ class NetworkConnection {
       this.connectSuccess.bind(this),
       this.connectFailure.bind(this)
     )
+
     this.adapter.setDataChannelListeners(
       this.dataChannelOpen.bind(this),
       this.dataChannelClosed.bind(this),
@@ -163,11 +172,9 @@ class NetworkConnection {
       FBCustomOp.createPayloadVector(flatbuilder, messagepackEncode(customData))
     )
 
-    const customsOffset = FBMessage.createCustomsVector(flatbuilder, [customOffset])
-    FBMessage.startMessage(flatbuilder)
-    FBMessage.addCustoms(flatbuilder, customsOffset)
-    const messageOffset = FBMessage.endMessage(flatbuilder)
-    flatbuilder.finish(messageOffset)
+    flatbuilder.finish(FBMessage.createMessage(
+      flatbuilder, FBMessageData.CustomOp, customOffset
+    ))
   }
 
   sendCustomData (dataType, customData, toClientId, guaranteed = false) {
@@ -199,7 +206,22 @@ class NetworkConnection {
 
   // Returns true if a new entity was created
   receivedData (data, sender) {
-    AFRAME.scenes[0].systems.networked.enqueueIncoming(data, sender)
+    FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef)
+    switch (messageRef.dataType()) {
+      case FBMessageData.SceneUpdate: {
+        AFRAME.scenes[0].systems.networked.enqueueIncoming(data, sender)
+        break
+      }
+      case FBMessageData.CustomOp: {
+        messageRef.data(customRef)
+        const dataType = customRef.dataType()
+
+        if (NAF.connection.dataChannelSubs[dataType]) {
+          NAF.connection.dataChannelSubs[dataType](dataType, messagepackDecode(customRef.payloadArray()), sender)
+        }
+        break
+      }
+    }
   }
 
   getServerTime () {

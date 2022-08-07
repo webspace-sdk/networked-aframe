@@ -1,5 +1,7 @@
 /* global AFRAME, NAF */
 
+const Y = require('yjs')
+
 AFRAME.registerComponent('networked-scene', {
   schema: {
     app: {default: 'default'},
@@ -27,13 +29,17 @@ AFRAME.registerComponent('networked-scene', {
     NAF.log.setDebug(this.data.debug)
     NAF.log.write('Networked-Aframe Connecting...')
 
+    this.doc = new Y.Doc()
     this.checkDeprecatedProperties()
     this.setupNetworkAdapter()
 
     if (this.hasOnConnectFunction()) {
       this.callOnConnect()
     }
-    return NAF.connection.connect(this.data.app, this.data.room, this.data.audio)
+
+    this.doc = new Y.Doc()
+
+    return NAF.connection.connect(this.data.app, this.data.room, this.doc, this.data.audio)
   },
 
   checkDeprecatedProperties: function () {

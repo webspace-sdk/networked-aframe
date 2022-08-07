@@ -24,10 +24,15 @@ table CustomOp {
   payload:[ubyte] (required);
 }
 
-table Message {
+table SceneUpdate {
   updates:[UpdateOp];
   deletes:[DeleteOp];
-  customs:[CustomOp];
+}
+
+union MessageData { SceneUpdate, CustomOp }
+
+table Message {
+  data: MessageData (required);
 }
 
 root_type Message;
