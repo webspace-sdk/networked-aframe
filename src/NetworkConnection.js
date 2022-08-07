@@ -99,11 +99,11 @@ class NetworkConnection {
     NAF.log.write('Networked-Aframe Client ID:', clientId)
     NAF.clientId = clientId
 
-    const { presence, doc } = this
+    const { presence } = this
 
     presence.setLocalStateField('client_id', clientId)
 
-    document.body.dispatchEvent(new CustomEvent('connected', {'detail': { clientId: clientId, presence, doc }}))
+    document.body.dispatchEvent(new CustomEvent('connected', {'detail': { clientId: clientId, presence }}))
   }
 
   connectFailure (errorCode, message) {
