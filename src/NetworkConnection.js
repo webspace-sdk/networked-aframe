@@ -60,8 +60,6 @@ class NetworkConnection {
   connect (appName, roomName, doc, presence, enableAudio = false) {
     NAF.app = appName
     NAF.room = roomName
-    NAF.doc = doc
-    NAF.presence = presence
 
     this.doc = doc
     this.presence = presence
@@ -101,10 +99,11 @@ class NetworkConnection {
     NAF.log.write('Networked-Aframe Client ID:', clientId)
     NAF.clientId = clientId
 
-    this.presence.setLocalState({ clientId })
+    const { presence, doc } = this
 
-    var evt = new CustomEvent('connected', {'detail': { clientId: clientId }})
-    document.body.dispatchEvent(evt)
+    presence.setLocalStateField('client_id', clientId)
+
+    document.body.dispatchEvent(new CustomEvent('connected', {'detail': { clientId: clientId, presence, doc }}))
   }
 
   connectFailure (errorCode, message) {
