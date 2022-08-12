@@ -17,10 +17,10 @@ class Schemas {
     }
   }
 
-  add(schema) {
+  add(schema, rootEl = document) {
     if (this.validateSchema(schema)) {
       this.schemaDict[schema.template] = schema;
-      var templateEl = document.querySelector(schema.template);
+      var templateEl = rootEl.querySelector(schema.template);
       if (!templateEl) {
         NAF.log.error(`Template el not found for ${schema.template}, make sure NAF.schemas.add is called after <a-scene> is defined.`);
         return;

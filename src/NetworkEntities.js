@@ -129,7 +129,7 @@ class NetworkEntities {
   }
 
   addEntityToSceneRoot (el) {
-    var scene = document.querySelector('a-scene')
+    var scene = AFRAME.scenes[0]
     scene.appendChild(el)
   }
 
