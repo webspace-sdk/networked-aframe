@@ -187,6 +187,10 @@ class NetworkConnection {
     } else {
       NAF.connection.broadcastData(flatbuilder.asUint8Array())
     }
+
+    if (NAF.connection.dataChannelSubs[dataType]) {
+      NAF.connection.dataChannelSubs[dataType](dataType, customData)
+    }
   }
 
   broadcastCustomDataGuaranteed (dataType, customData) {
