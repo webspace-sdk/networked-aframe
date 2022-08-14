@@ -189,7 +189,7 @@ class NetworkConnection {
     }
 
     if (NAF.connection.dataChannelSubs[dataType]) {
-      NAF.connection.dataChannelSubs[dataType](dataType, customData)
+      NAF.connection.dataChannelSubs[dataType](dataType, customData, NAF.clientId)
     }
   }
 
