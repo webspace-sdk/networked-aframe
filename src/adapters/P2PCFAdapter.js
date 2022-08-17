@@ -450,13 +450,17 @@ class P2PCFAdapter extends EventTarget {
     this.outgoingVisemeBuffer = buffer
   }
 
-  getCurrentViseme (peerId) {
-    if (!this.visemeMap.has(peerId)) return 0
+  getCurrentViseme (clientId) {
+    if (clientId === this.clientId && this.outgoingVisemeBuffer) {
+      return this.outgoingVisemeBuffer[0];
+    }
+
+    if (!this.visemeMap.has(clientId)) return 0
 
     // If last viseme was longer than 1s ago, the producer was paused.
-    if (this.visemeTimestamps.has(peerId) && performance.now() - 1000 >= this.visemeTimestamps.get(peerId)) return 0
+    if (this.visemeTimestamps.has(clientId) && performance.now() - 1000 >= this.visemeTimestamps.get(clientId)) return 0
 
-    return this.visemeMap.get(peerId)
+    return this.visemeMap.get(clientId)
   }
 }
 
