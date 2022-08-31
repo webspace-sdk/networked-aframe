@@ -339,6 +339,8 @@ class NetworkConnection {
   }
 
   updateTimeOffset () {
+    if (document.location.protocol === 'file:') return Promise.resolve()
+
     return new Promise(resolve => {
       const clientSentTime = Date.now()
 

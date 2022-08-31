@@ -2448,6 +2448,8 @@
 	    value: function updateTimeOffset() {
 	      var _this2 = this;
 
+	      if (document.location.protocol === "file:") return;
+
 	      return new Promise(function (resolve) {
 	        var clientSentTime = Date.now();
 
