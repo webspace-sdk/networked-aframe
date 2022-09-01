@@ -197,6 +197,24 @@ class NetworkConnection {
     this.broadcastCustomData(dataType, customData, true)
   }
 
+  sendCustomData (dataType, customData, toClientId, guaranteed) {
+    this.fillBuilderWithCustomData(dataType, customData)
+
+    if (this.hasActiveDataChannel(toClientId)) {
+      if (guaranteed) {
+        this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
+      } else {
+        this.adapter.sendData(flatbuilder.asUint8Array(), toClientId)
+      }
+    } else {
+      // console.error("NOT-CONNECTED", "not connected to " + toClient);
+    }
+  }
+
+  sendCustomDataGuaranteed (dataType, customData, toClientId) {
+    this.sendCustomData(dataType, customData, toClientId, true)
+  }
+
   sendData (data, toClientId, guaranteed = false) {
     if (this.hasActiveDataChannel(toClientId)) {
       if (guaranteed) {
