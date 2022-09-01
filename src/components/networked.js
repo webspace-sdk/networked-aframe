@@ -476,7 +476,9 @@ AFRAME.registerComponent('networked', {
     this.positionDenormalizer = NAF.entities.positionDenormalizer
 
     if (this.data.owner === '') {
-      this.lastOwnerTime = NAF.connection.getServerTime()
+      // The original owner can be overruled if another person joins the network who took ownership explicitly.
+      // This is needed for objects that were loaded as part of a scene.
+      this.lastOwnerTime = 1
       this.el.setAttribute(this.name, { owner: NAF.clientId, creator: NAF.clientId })
       this.el.object3D.matrixNeedsUpdate = true
       setTimeout(() => {
