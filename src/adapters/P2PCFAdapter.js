@@ -56,8 +56,8 @@ class P2PCFAdapter extends EventTarget {
     this.workerUrl = null
   }
 
-  setWorkerUrl (workerUrl) {
-    this.workerUrl = workerUrl
+  setOptions (options) {
+    this.options = options
   }
 
   setApp (app) {
@@ -94,7 +94,6 @@ class P2PCFAdapter extends EventTarget {
       this.leaveRoom()
 
       const p2pcfOptions = {
-        workerUrl: this.workerUrl,
         rtcPeerConnectionOptions: {
           rtcpMuxPolicy: 'require',
           sdpSemantics: 'unified-plan',
@@ -105,8 +104,8 @@ class P2PCFAdapter extends EventTarget {
         sdpTransform: sdpTransformConfigureCodecs
       }
 
-      if (this.workerUrl) {
-        p2pcfOptions.workerUrl = this.workerUrl
+      if (this.options && this.options.workerUrl) {
+        p2pcfOptions.workerUrl = this.options.workerUrl
       }
 
       this.p2pcf = new P2PCF(this.clientId, this.room, p2pcfOptions)

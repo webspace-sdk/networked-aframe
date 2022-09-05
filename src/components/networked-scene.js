@@ -10,7 +10,11 @@ AFRAME.registerComponent('networked-scene', {
     connectOnLoad: {default: true},
     onConnect: {default: 'onConnect'},
     adapter: {default: 'wsEasyRtc'}, // See https://github.com/networked-aframe/networked-aframe#adapters for list of adapters
-    audio: {default: false}, // Only if adapter supports audio
+    adapterOptions: {
+      default: {},
+      parse: v => (typeof v === 'object' ? v : JSON.parse(v)),
+      stringify: JSON.stringify
+    },
     debug: {default: false}
   },
 
@@ -39,7 +43,7 @@ AFRAME.registerComponent('networked-scene', {
       this.callOnConnect()
     }
 
-    return NAF.connection.connect(this.data.app, this.data.room, this.doc, this.presence, this.data.audio)
+    return NAF.connection.connect(this.data.app, this.data.room, this.doc, this.presence, this.data.adapterOptions)
   },
 
   checkDeprecatedProperties: function () {

@@ -57,7 +57,7 @@ class NetworkConnection {
     this.adapter = adapter
   }
 
-  connect (appName, roomName, doc, presence, enableAudio = false) {
+  connect (appName, roomName, doc, presence, adapterOptions = {}) {
     NAF.app = appName
     NAF.room = roomName
 
@@ -68,6 +68,7 @@ class NetworkConnection {
     this.presence.on('update', this._onPresenceUpdate)
 
     this.adapter.setApp(appName)
+    this.adapter.setOptions(adapterOptions)
 
     this.adapter.setServerConnectListeners(
       this.connectSuccess.bind(this),
