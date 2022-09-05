@@ -53,6 +53,11 @@ class P2PCFAdapter extends EventTarget {
     this.visemeTimestamps = new Map()
     this.micEnabled = false
     this.type = 'p2pcf'
+    this.workerUrl = 'https://webspace-worker.minddrop.workers.dev'
+  }
+
+  setWorkerUrl (workerUrl) {
+    this.workerUrl = workerUrl
   }
 
   setApp (app) {
@@ -90,6 +95,7 @@ class P2PCFAdapter extends EventTarget {
 
       this.p2pcf = new P2PCF(this.clientId, this.room,
         {
+          workerUrl: this.workerUrl,
           rtcPeerConnectionOptions: {
             rtcpMuxPolicy: 'require',
             sdpSemantics: 'unified-plan',
@@ -452,7 +458,7 @@ class P2PCFAdapter extends EventTarget {
 
   getCurrentViseme (clientId) {
     if (clientId === this.clientId && this.outgoingVisemeBuffer) {
-      return this.outgoingVisemeBuffer[0];
+      return this.outgoingVisemeBuffer[0]
     }
 
     if (!this.visemeMap.has(clientId)) return 0
