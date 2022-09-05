@@ -53,7 +53,7 @@ class P2PCFAdapter extends EventTarget {
     this.visemeTimestamps = new Map()
     this.micEnabled = false
     this.type = 'p2pcf'
-    this.workerUrl = 'https://webspace-worker.minddrop.workers.dev'
+    this.workerUrl = null
   }
 
   setWorkerUrl (workerUrl) {
@@ -93,18 +93,23 @@ class P2PCFAdapter extends EventTarget {
     return new Promise(resolve => {
       this.leaveRoom()
 
-      this.p2pcf = new P2PCF(this.clientId, this.room,
-        {
-          workerUrl: this.workerUrl,
-          rtcPeerConnectionOptions: {
-            rtcpMuxPolicy: 'require',
-            sdpSemantics: 'unified-plan',
-            encodedInsertableStreams: supportsInsertableStreams
-          },
-          rtcPeerConnectionProprietaryConstraints,
-          fastPollingRateMs: 250,
-          sdpTransform: sdpTransformConfigureCodecs
-        })
+      const p2pcfOptions = {
+        workerUrl: this.workerUrl,
+        rtcPeerConnectionOptions: {
+          rtcpMuxPolicy: 'require',
+          sdpSemantics: 'unified-plan',
+          encodedInsertableStreams: supportsInsertableStreams
+        },
+        rtcPeerConnectionProprietaryConstraints,
+        fastPollingRateMs: 250,
+        sdpTransform: sdpTransformConfigureCodecs
+      }
+
+      if (this.workerUrl) {
+        p2pcfOptions.workerUrl = this.workerUrl
+      }
+
+      this.p2pcf = new P2PCF(this.clientId, this.room, p2pcfOptions)
 
       this.p2pcf.on('peerconnect', (peer) => {
         this.onDataChannelOpen(peer.client_id)
