@@ -90,9 +90,11 @@ AFRAME.registerSystem('networked', {
 
     let running = false
 
+    this.paused = false
+
     // Main networking loop, doesn't run on RAF
     setInterval(() => {
-      if (running || !NAF.connection.adapter) return
+      if (this.paused || running || !NAF.connection.adapter) return
 
       running = true
       const now = performance.now()
@@ -128,6 +130,14 @@ AFRAME.registerSystem('networked', {
   enqueueIncoming (data, sender) {
     this.incomingData.push(data)
     this.incomingSenders.push(sender)
+  },
+
+  pause () {
+    this.paused = true
+  },
+
+  play () {
+    this.paused = false
   },
 
   reset () {
@@ -478,7 +488,7 @@ AFRAME.registerComponent('networked', {
     if (this.data.owner === '') {
       // The original owner can be overruled if another person joins the network who took ownership explicitly.
       // This is needed for objects that were loaded as part of a scene.
-      this.lastOwnerTime = 1
+      this.lastOwnerTime = NAF.connection.getServerTime()
       this.el.setAttribute(this.name, { owner: NAF.clientId, creator: NAF.clientId })
       this.el.object3D.matrixNeedsUpdate = true
       setTimeout(() => {
