@@ -3,7 +3,6 @@
 const { Builder } = require('flatbuffers/js/builder')
 const { encode: messagepackEncode } = require('messagepack')
 const { ByteBuffer } = require('flatbuffers/js/byte-buffer')
-const Y = require('yjs')
 const { encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } = require('y-protocols/awareness')
 
 var ReservedDataType = { Update: 'u', Remove: 'r' }
@@ -14,15 +13,9 @@ const flatbuilder = new Builder(1024)
 const FBMessage = require('./schema/networked-aframe/message').Message
 const FBCustomOp = require('./schema/networked-aframe/custom-op').CustomOp
 const FBMessageData = require('./schema/networked-aframe/message-data').MessageData
-const FBDocSyncRequest = require('./schema/networked-aframe/doc-sync-request').DocSyncRequest
-const FBDocSyncResponse = require('./schema/networked-aframe/doc-sync-response').DocSyncResponse
-const FBDocUpdate = require('./schema/networked-aframe/doc-update').DocUpdate
 const FBPresenceUpdate = require('./schema/networked-aframe/presence-update').PresenceUpdate
 
 const messageRef = new FBMessage()
-const docSyncRequestRef = new FBDocSyncRequest()
-const docSyncResponseRef = new FBDocSyncResponse()
-const docUpdateRef = new FBDocUpdate()
 const presenceUpdateRef = new FBPresenceUpdate()
 const customRef = new FBCustomOp()
 
@@ -49,7 +42,6 @@ class NetworkConnection {
     this._serverTimeRequests = 0
     this._timeOffsets = []
 
-    this._onDocUpdate = this._onDocUpdate.bind(this)
     this._onPresenceUpdate = this._onPresenceUpdate.bind(this)
   }
 
@@ -57,14 +49,12 @@ class NetworkConnection {
     this.adapter = adapter
   }
 
-  connect (appName, roomName, doc, presence, adapterOptions = {}) {
+  connect (appName, roomName, presence, adapterOptions = {}) {
     NAF.app = appName
     NAF.room = roomName
 
-    this.doc = doc
     this.presence = presence
 
-    this.doc.on('update', this._onDocUpdate)
     this.presence.on('update', this._onPresenceUpdate)
 
     this.adapter.setApp(appName)
@@ -143,7 +133,6 @@ class NetworkConnection {
     NAF.log.write('Opened data channel from ' + clientId)
     this.activeDataChannels[clientId] = true
     this.entities.completeSync(clientId, true)
-    this.sendDocSyncRequest(clientId)
     this.sendPresenceUpdate(clientId)
 
     document.body.dispatchEvent(new CustomEvent('clientConnected', {detail: {clientId: clientId}}))
@@ -245,20 +234,6 @@ class NetworkConnection {
     ))
   }
 
-  sendCustomData (dataType, customData, toClientId, guaranteed = false) {
-    this.fillBuilderWithCustomData(dataType, customData)
-
-    if (guaranteed) {
-      NAF.connection.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
-    } else {
-      NAF.connection.sendData(flatbuilder.asUint8Array(), toClientId)
-    }
-  }
-
-  sendCustomDataGuaranteed (dataType, customData, toClientId) {
-    this.sendCustomData(dataType, customData, toClientId, true)
-  }
-
   subscribeToDataChannel (dataType, callback) {
     this.dataChannelSubs[dataType] = callback
   }
@@ -274,7 +249,7 @@ class NetworkConnection {
 
   // Returns true if a new entity was created
   receivedData (data, sender) {
-    const { presence, doc, adapter } = this
+    const { presence } = this
 
     FBMessage.getRootAsMessage(new ByteBuffer(data), messageRef)
 
@@ -286,36 +261,6 @@ class NetworkConnection {
       case FBMessageData.PresenceUpdate: {
         messageRef.data(presenceUpdateRef)
         applyAwarenessUpdate(presence, presenceUpdateRef.updateArray(), sender)
-        break
-      }
-      case FBMessageData.DocSyncRequest: {
-        messageRef.data(docSyncRequestRef)
-        const stateVector = docSyncRequestRef.encodedStateVectorArray()
-        const update = Y.encodeStateAsUpdate(doc, stateVector)
-
-        flatbuilder.clear()
-        flatbuilder.finish(
-          FBMessage.createMessage(flatbuilder, FBMessageData.DocSyncResponse,
-            FBDocSyncResponse.createDocSyncResponse(flatbuilder,
-              FBDocSyncResponse.createUpdateVector(flatbuilder, update)
-            )
-          )
-        )
-
-        adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), sender)
-
-        break
-      }
-      case FBMessageData.DocSyncResponse: {
-        messageRef.data(docSyncResponseRef)
-        Y.applyUpdate(doc, docSyncResponseRef.updateArray())
-
-        break
-      }
-      case FBMessageData.DocUpdate: {
-        messageRef.data(docUpdateRef)
-        Y.applyUpdate(doc, docUpdateRef.updateArray())
-
         break
       }
       case FBMessageData.CustomOp: {
@@ -345,10 +290,6 @@ class NetworkConnection {
     this.adapter = null
     this.adapter = null
     AFRAME.scenes[0].systems.networked.reset()
-
-    if (this.doc) {
-      this.doc.off('update', this._onDocUpdate)
-    }
 
     if (this.presence) {
       this.presence.off('update', this._onPresenceUpdate)
@@ -397,22 +338,6 @@ class NetworkConnection {
     })
   }
 
-  sendDocSyncRequest (toClientId) {
-    flatbuilder.clear()
-
-    const encodedStateVector = Y.encodeStateVector(this.doc)
-
-    flatbuilder.finish(
-        FBMessage.createMessage(flatbuilder, FBMessageData.DocSyncRequest,
-          FBDocSyncRequest.createDocSyncRequest(flatbuilder,
-            FBDocSyncRequest.createEncodedStateVectorVector(flatbuilder, encodedStateVector)
-          )
-        )
-      )
-
-    this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
-  }
-
   sendPresenceUpdate (toClientId) {
     flatbuilder.clear()
 
@@ -426,21 +351,6 @@ encodeAwarenessUpdate(this.presence, Array.from(this.presence.getStates().keys()
       )
 
     this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
-  }
-
-  _onDocUpdate (update, origin) {
-    if (origin !== this) return
-
-    flatbuilder.clear()
-    flatbuilder.finish(
-      FBMessage.createMessage(flatbuilder, FBMessageData.DocUpdate,
-        FBDocUpdate.createDocUpdate(flatbuilder,
-          FBDocUpdate.createUpdateVector(flatbuilder, update)
-        )
-      )
-    )
-
-    this.adapter.broadcastDataGuaranteed(flatbuilder.asUint8Array())
   }
 
   _onPresenceUpdate ({ added, updated, removed }, origin) {

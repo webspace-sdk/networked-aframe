@@ -34,8 +34,7 @@ AFRAME.registerComponent('networked-scene', {
     NAF.log.setDebug(this.data.debug)
     NAF.log.write('Networked-Aframe Connecting...')
 
-    this.doc = new Y.Doc()
-    this.presence = new Awareness(this.doc)
+    this.presence = new Awareness(new Y.Doc())
     this.checkDeprecatedProperties()
     this.setupNetworkAdapter()
 
@@ -43,7 +42,7 @@ AFRAME.registerComponent('networked-scene', {
       this.callOnConnect()
     }
 
-    return NAF.connection.connect(this.data.app, this.data.room, this.doc, this.presence, this.data.adapterOptions)
+    return NAF.connection.connect(this.data.app, this.data.room, this.presence, this.data.adapterOptions)
   },
 
   checkDeprecatedProperties: function () {
@@ -70,5 +69,6 @@ AFRAME.registerComponent('networked-scene', {
     NAF.log.write('networked-scene disconnected')
     this.el.removeEventListener('connect', this.connect)
     NAF.connection.disconnect()
+    this.presence.destroy()
   }
 })

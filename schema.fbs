@@ -29,18 +29,6 @@ table SceneUpdate {
   deletes:[DeleteOp];
 }
 
-table DocSyncRequest {
-  encoded_state_vector:[ubyte];
-}
-
-table DocSyncResponse {
-  update:[ubyte];
-}
-
-table DocUpdate {
-  update:[ubyte];
-}
-
 table PresenceUpdate {
   update:[ubyte];
 }
