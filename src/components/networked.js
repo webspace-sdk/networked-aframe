@@ -633,45 +633,78 @@ AFRAME.registerComponent('networked', {
               } else {
                 flexbuilder.addInt(3)
 
-                if (!aframeSchemaSortedKeys.has(componentName)) {
-                  aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort())
-                }
+                if (componentSchema.property) {
+                  // Only acceptable format here are vec2, 3, 4
+                  // We add up to 4 values and end with 255, ordered by x, y, z, w
+                  let found = false
 
-                const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName)
+                  if (typeof (dataToSync.x) !== 'undefined' && typeof (dataToSync.y) !== 'undefined' && typeof (dataToSync.z) !== 'undefined' && typeof (dataToSync.w) !== 'undefined') {
+                    flexbuilder.addInt(0)
+                    flexbuilder.add(Math.fround(dataToSync.x))
+                    flexbuilder.add(Math.fround(dataToSync.y))
+                    flexbuilder.add(Math.fround(dataToSync.z))
+                    flexbuilder.add(Math.fround(dataToSync.w))
+                    found = true
+                  }
 
-                for (let j = 0; j <= aframeSchemaKeys.length; j++) {
-                  const key = aframeSchemaKeys[j]
+                  if (!found && typeof (dataToSync.x) !== 'undefined' && typeof (dataToSync.y) !== 'undefined' && typeof (dataToSync.z) !== 'undefined') {
+                    flexbuilder.addInt(1)
+                    flexbuilder.add(Math.fround(dataToSync.x))
+                    flexbuilder.add(Math.fround(dataToSync.y))
+                    flexbuilder.add(Math.fround(dataToSync.z))
+                    found = true
+                  }
 
-                  if (dataToSync[key] !== undefined) {
-                    flexbuilder.addInt(j)
+                  if (!found && typeof (dataToSync.x) !== 'undefined' && typeof (dataToSync.y) !== 'undefined') {
+                    flexbuilder.addInt(2)
+                    flexbuilder.add(Math.fround(dataToSync.x))
+                    flexbuilder.add(Math.fround(dataToSync.y))
+                    found = true
+                  }
 
-                    const value = dataToSync[key]
+                  if (!found) {
+                    NAF.warn('Invalid object serialize', dataToSync)
+                  }
+                } else {
+                  if (!aframeSchemaSortedKeys.has(componentName)) {
+                    aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort())
+                  }
 
-                    if (typeof value === 'number') {
-                      if (Number.isInteger(value)) {
-                        if (value > 2147483647 || value < -2147483648) {
-                          NAF.log.error('64 bit integers not supported', value, componentSchema)
+                  const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName)
+
+                  for (let j = 0; j <= aframeSchemaKeys.length; j++) {
+                    const key = aframeSchemaKeys[j]
+
+                    if (dataToSync[key] !== undefined) {
+                      flexbuilder.addInt(j)
+
+                      const value = dataToSync[key]
+
+                      if (typeof value === 'number') {
+                        if (Number.isInteger(value)) {
+                          if (value > 2147483647 || value < -2147483648) {
+                            NAF.log.error('64 bit integers not supported', value, componentSchema)
+                          } else {
+                            flexbuilder.add(value)
+                          }
                         } else {
-                          flexbuilder.add(value)
+                          flexbuilder.add(Math.fround(value))
                         }
                       } else {
-                        flexbuilder.add(Math.fround(value))
+                        flexbuilder.add(value)
                       }
-                    } else {
-                      flexbuilder.add(value)
                     }
                   }
+
+                  flexbuilder.addInt(255) // Terminator
                 }
               }
             } else {
-              flexbuilder.addInt(3)
-              flexbuilder.addInt(0)
+              flexbuilder.addInt(4)
 
               const value = dataToSync
 
-              if (typeof value === 'object') {
-                NAF.log.error('Schema should not set property for object or array values', value, componentSchema)
-              } else if (typeof value === 'number') {
+              if (typeof value === 'number') {
                 if (Number.isInteger(value)) {
                   if (value > 2147483647 || value < -2147483648) {
                     NAF.log.error('64 bit integers not supported', value, componentSchema)
@@ -811,73 +844,103 @@ AFRAME.registerComponent('networked', {
       if (!OBJECT3D_COMPONENTS.includes(componentName)) {
         const type = refGetInt(componentDataRef, 1)
 
-        if (type !== 3) {
-          switch (type) {
-            case 0: // Vector2
-              el.setAttribute(componentName, { [componentSchema.property]: new THREE.Vector2(
+        switch (type) {
+          case 0: // Vector2
+            el.setAttribute(componentName, { [componentSchema.property]: new THREE.Vector2(
               refGetNumeric(componentDataRef, 2) || 0,
               refGetNumeric(componentDataRef, 3) || 0
             ) })
-              break
-            case 1: // Vector3
-              el.setAttribute(componentName, { [componentSchema.property]: new THREE.Vector3(
+            break
+          case 1: // Vector3
+            el.setAttribute(componentName, { [componentSchema.property]: new THREE.Vector3(
               refGetNumeric(componentDataRef, 2) || 0,
               refGetNumeric(componentDataRef, 3) || 0,
               refGetNumeric(componentDataRef, 4) || 0
             ) })
-              break
-            case 2: // Quaternion
-              el.setAttribute(componentName, { [componentSchema.property]: new THREE.Quaternion(
+            break
+          case 2: // Quaternion
+            el.setAttribute(componentName, { [componentSchema.property]: new THREE.Quaternion(
               refGetNumeric(componentDataRef, 2) || 0,
               refGetNumeric(componentDataRef, 3) || 0,
               refGetNumeric(componentDataRef, 4) || 0,
               refGetNumeric(componentDataRef, 5) || 0
             ) })
-              break
-          }
-        } else {
-          if (componentSchema.property) {
-            // Skip the property index which is always zero for this.
-            const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 3) }
+            break
+          case 3:
+            // Object
+            if (componentSchema.property) {
+              let objectValue = {}
 
-            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
-              el.setAttribute(componentName, attributeValue)
-            }
-          } else {
-            if (!aframeSchemaSortedKeys.has(componentName)) {
-              const schema = AFRAME.components[componentName].schema
-
-              if (schema.default) {
-                aframeSchemaSortedKeys.set(componentName, [])
-              } else {
-                aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort())
+              // This is a aframe vec2, vec3, vec4
+              switch (refGetInt(componentDataRef, 2)) {
+                case (0): // vec4
+                  objectValue.x = refGetNumeric(componentDataRef, 3) || 0
+                  objectValue.y = refGetNumeric(componentDataRef, 4) || 0
+                  objectValue.z = refGetNumeric(componentDataRef, 5) || 0
+                  objectValue.w = refGetNumeric(componentDataRef, 6) || 0
+                  break
+                case (1): // vec3
+                  objectValue.x = refGetNumeric(componentDataRef, 3) || 0
+                  objectValue.y = refGetNumeric(componentDataRef, 4) || 0
+                  objectValue.z = refGetNumeric(componentDataRef, 5) || 0
+                  break
+                case (2): // vec2
+                  objectValue.x = refGetNumeric(componentDataRef, 3) || 0
+                  objectValue.y = refGetNumeric(componentDataRef, 4) || 0
+                  break
               }
-            }
 
-            const componentDataLength = componentDataRef.length()
+              const attributeValue = { [componentSchema.property]: objectValue }
 
-            if (componentDataLength > 1) {
-              let attributeValue = {}
+              if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
+                el.setAttribute(componentName, attributeValue)
+              }
+            } else {
+              if (!aframeSchemaSortedKeys.has(componentName)) {
+                const schema = AFRAME.components[componentName].schema
+
+                if (schema.default) {
+                  aframeSchemaSortedKeys.set(componentName, [])
+                } else {
+                  aframeSchemaSortedKeys.set(componentName, [...Object.keys(AFRAME.components[componentName].schema)].sort())
+                }
+              }
+
               const aframeSchemaKeys = aframeSchemaSortedKeys.get(componentName)
 
-              for (let j = 2; j < componentDataLength; j += 2) {
-                const key = refGetInt(componentDataRef, j)
-                const value = refGetToObject(componentDataRef, j + 1)
+              let offset = 2
+              let keyIndex = refGetInt(componentDataRef, offset)
+              let attributeValue = {}
+
+              while (keyIndex !== 255 && offset < 1024) {
+                const value = refGetToObject(componentDataRef, offset + 1)
 
                 if (aframeSchemaKeys.length === 0) {
-                  // default value case
+                // default value case
                   attributeValue = value
                   break
                 } else {
-                  attributeValue[aframeSchemaKeys[key]] = value
+                  attributeValue[aframeSchemaKeys[keyIndex]] = value
                 }
+
+                offset += 2
+                keyIndex = refGetInt(componentDataRef, offset)
               }
 
               if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
                 el.setAttribute(componentName, attributeValue)
               }
             }
+            break
+          case 4: {
+              // Value
+            const attributeValue = { [componentSchema.property]: refGetToObject(componentDataRef, 2) }
+
+            if (NAF.connection.adapter.sanitizeComponentValues(this.el, componentName, attributeValue, sender)) {
+              el.setAttribute(componentName, attributeValue)
+            }
           }
+            break
         }
       } else {
         if (NAF.connection.adapter.authorizeEntityManipulation(this.el, sender)) {
