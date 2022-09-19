@@ -100,7 +100,8 @@ class P2PCFAdapter extends EventTarget {
           encodedInsertableStreams: supportsInsertableStreams
         },
         rtcPeerConnectionProprietaryConstraints,
-        fastPollingRateMs: 250,
+        fastPollingRateMs: this.options.p2pcfFastPollingRate || 250,
+        slowPollingRateMs: this.options.p2pcfSlowPollingRate || 3000,
         sdpTransform: sdpTransformConfigureCodecs
       }
 
