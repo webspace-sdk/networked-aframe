@@ -140,13 +140,17 @@ class NetworkConnection {
   dataChannelClosed (clientId) {
     NAF.log.write('Closed data channel from ' + clientId)
     this.activeDataChannels[clientId] = false
-    this.entities.removeEntitiesOfClient(clientId)
 
     const presenceId = presenceClientIdforNafClientId(this.presence, clientId)
 
+    // Important to remove the presence state before removing the entities since
+    // this could cause us to become the master client, which means we'll take ownership
+    // of the persistent entities.
     if (presenceId) {
       removeAwarenessStates(this.presence, [presenceId], 'disconnect')
     }
+
+    this.entities.removeEntitiesOfClient(clientId)
 
     var evt = new CustomEvent('clientDisconnected', {detail: {clientId: clientId}})
     document.body.dispatchEvent(evt)
@@ -350,6 +354,13 @@ encodeAwarenessUpdate(this.presence, Array.from(this.presence.getStates().keys()
       )
 
     this.adapter.sendDataGuaranteed(flatbuilder.asUint8Array(), toClientId)
+  }
+
+  isMasterClient () {
+    // The master client is the client with the lowest awereness id in presence
+    const masterClientKey = [...this.presence.states.keys()].sort()[0]
+    const masterClientId = this.presence.states.get(masterClientKey).client_id
+    return masterClientId === NAF.clientId
   }
 
   _onPresenceUpdate ({ added, updated, removed }, origin) {

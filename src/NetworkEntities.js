@@ -13,7 +13,6 @@ class NetworkEntities {
     this.entities = {}
     this.childCache = new ChildEntityCache()
     this.onRemoteEntityCreatedEvent = new Event('remoteEntityCreated')
-    this._persistentFirstSyncs = {}
     this.positionNormalizer = null
     this.positionDenormalizer = null
   }
@@ -152,17 +151,24 @@ class NetworkEntities {
   }
 
   removeEntitiesOfClient (clientId) {
-    var entityList = []
+    const entityList = []
+
     for (var id in this.entities) {
-      var entityCreator = NAF.utils.getCreator(this.entities[id])
+      const entityCreator = NAF.utils.getCreator(this.entities[id])
       if (entityCreator === clientId) {
         let persists
         const component = this.entities[id].getAttribute('networked')
         if (component && component.persistent) {
-          persists = NAF.utils.isMine(this.entities[id]) || NAF.utils.takeOwnership(this.entities[id])
+          if (NAF.utils.isMine(this.entities[id])) {
+            persists = true
+          } else if (NAF.connection.isMasterClient()) {
+            // Master client takes ownership of persistent entities
+            persists = NAF.utils.takeOwnership(this.entities[id])
+          }
         }
+
         if (!persists) {
-          var entity = this.removeEntity(id)
+          const entity = this.removeEntity(id)
           entityList.push(entity)
         }
       }
@@ -214,11 +220,11 @@ class NetworkEntities {
   removeRemoteEntities (includeOwned = false, excludeEntities = []) {
     this.childCache = new ChildEntityCache()
 
-    for (var id in this.entities) {
+    for (const id in this.entities) {
       const entity = this.entities[id]
       if (excludeEntities.includes(entity)) continue
 
-      var owner = entity.getAttribute('networked').owner
+      const owner = entity.getAttribute('networked').owner
 
       if (includeOwned || owner !== NAF.clientId) {
         this.removeEntity(id)
