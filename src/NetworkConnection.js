@@ -55,8 +55,6 @@ class NetworkConnection {
 
     this.presence = presence
 
-    this.presence.on('update', this._onPresenceUpdate)
-
     this.adapter.setApp(appName)
     this.adapter.setOptions(adapterOptions)
 
@@ -74,6 +72,7 @@ class NetworkConnection {
     return this.updateTimeOffset()
       .then(() => this.adapter.connect())
       .then(() => this.adapter.joinRoom(roomName))
+      .then(() => this.presence.on('update', this._onPresenceUpdate))
   }
 
   getPresenceStateForClientId (clientId) {
