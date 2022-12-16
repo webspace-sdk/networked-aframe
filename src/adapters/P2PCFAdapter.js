@@ -119,7 +119,7 @@ class P2PCFAdapter extends EventTarget {
         // that late arriving packets will be out of date. This assumption will
         // fail for packets that arrive late that have unreliable updates
         // for multiple objects.
-        const unreliableChannel = peer._pc.createDataChannel(peer.channelName + '-unreliable', { ordered: true, maxRetransmits: 0, id: peer._channel.id + 1, negotiated: true })
+        const unreliableChannel = peer._pc.createDataChannel(peer.channelName + '-unreliable', { ordered: true, maxRetransmits: 0, id: peer._channel.id + 1 })
         unreliableChannel.binaryType = 'arraybuffer'
         unreliableChannel.onmessage = event => peer._onChannelMessage(event)
         unreliableChannel.onopen = () =>
