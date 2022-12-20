@@ -219,10 +219,9 @@ class P2PCFAdapter extends EventTarget {
         this.onReceivedData(new Uint8Array(msg), peer.client_id)
       })
 
-      this.p2pcf.start().then(() => {
-        this.onConnectSuccess(this.clientId)
-        resolve()
-      })
+      this.p2pcf.start()
+      this.onConnectSuccess(this.clientId)
+      resolve()
     })
   }
 
