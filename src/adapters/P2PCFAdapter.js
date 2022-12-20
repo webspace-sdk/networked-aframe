@@ -84,6 +84,8 @@ class P2PCFAdapter extends EventTarget {
   }
 
   getConnectedClients () {
+    if (!this.p2pcf) return []
+
     return this.p2pcf.connectedSessions
   }
 
