@@ -238,6 +238,8 @@ class P2PCFAdapter extends EventTarget {
   }
 
   broadcastData (data, guaranteed = false) {
+    if (!this.p2pcf) return
+
     let sendUnreliable = !guaranteed && data.byteLength < MAX_UNRELIABLE_MESSAGE_LENGTH_BYTES
 
     if (sendUnreliable) {
@@ -262,6 +264,8 @@ class P2PCFAdapter extends EventTarget {
   }
 
   sendData (data, toClientId, guaranteed = false) {
+    if (!this.p2pcf) return
+
     for (const peer of this.p2pcf.peers.values()) {
       if (peer.client_id === toClientId) {
         if (!guaranteed && this.unreliableChannels.has(toClientId)) {
