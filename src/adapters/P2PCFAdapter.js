@@ -3,9 +3,6 @@ const P2PCF = require('p2pcf').default
 const sdpTransform = require('sdp-transform')
 const { EventTarget } = require('event-target-shim')
 
-// Use reliable channel, which is automatically chunked, for long messages
-const MAX_UNRELIABLE_MESSAGE_LENGTH_BYTES = 16000
-
 // If the browser supports insertable streams, we insert a 5 byte payload at the end of the voice
 // frame encoding 4 magic bytes and 1 viseme byte. This is a hack because on older browsers
 // this data will be injested into the codec, but since the values are near zero it seems to have
@@ -45,7 +42,6 @@ class P2PCFAdapter extends EventTarget {
     this.app = null
     this.clientId = null
     this.localMediaStream = null
-    this.unreliableChannels = new Map()
     this.audioTracks = new Map()
     this.videoTracks = new Map()
     this.pendingMediaRequests = new Map()
@@ -116,22 +112,6 @@ class P2PCFAdapter extends EventTarget {
       this.p2pcf.on('peerconnect', (peer) => {
         this.onDataChannelOpen(peer.client_id)
         this.updatePeerTracksForLocalMediaStream(peer)
-
-        // Unrelible DC is ordered, which is going to lean on the assumption
-        // that late arriving packets will be out of date. This assumption will
-        // fail for packets that arrive late that have unreliable updates
-        // for multiple objects.
-        const unreliableChannel = peer._pc.createDataChannel(peer.channelName + '-unreliable', { ordered: true, maxRetransmits: 0, id: peer._channel.id + 1 })
-        unreliableChannel.binaryType = 'arraybuffer'
-        unreliableChannel.onmessage = event => peer._onChannelMessage(event)
-        unreliableChannel.onopen = () =>
-          this.unreliableChannels.set(peer.client_id, unreliableChannel)
-
-        unreliableChannel.onclose = () =>
-          this.unreliableChannels.delete(peer.client_id)
-
-        unreliableChannel.onerror = () =>
-          this.unreliableChannels.delete(peer.client_id)
 
         peer.on('track', (track, stream, receiver) => {
           switch (track.kind) {
@@ -236,43 +216,22 @@ class P2PCFAdapter extends EventTarget {
     }
   }
 
-  broadcastData (data, guaranteed = false) {
+  broadcastData (data) {
     if (!this.p2pcf) return
 
-    let sendUnreliable = !guaranteed && data.byteLength < MAX_UNRELIABLE_MESSAGE_LENGTH_BYTES
-
-    if (sendUnreliable) {
-      for (const peer of this.p2pcf.peers.values()) {
-        if (this.unreliableChannels.has(peer.client_id)) continue
-        sendUnreliable = false
-        break
-      }
-    }
-
-    if (sendUnreliable) {
-      for (const channel of this.unreliableChannels.values()) {
-        channel.send(data)
-      }
-    } else {
-      this.p2pcf.broadcast(data)
-    }
+    this.p2pcf.broadcast(data)
   }
 
   broadcastDataGuaranteed (data) {
-    this.broadcastData(data, true)
+    this.broadcastData(data)
   }
 
-  sendData (data, toClientId, guaranteed = false) {
+  sendData (data, toClientId) {
     if (!this.p2pcf) return
 
     for (const peer of this.p2pcf.peers.values()) {
       if (peer.client_id === toClientId) {
-        if (!guaranteed && this.unreliableChannels.has(toClientId)) {
-          this.unreliableChannels.get(toClientId).send(data)
-        } else {
-          this.p2pcf.send(peer, data)
-        }
-
+        this.p2pcf.send(peer, data)
         break
       }
     }
