@@ -31,7 +31,7 @@
     "event-target-shim": "^6.0.2",
     "flatbuffers": "github:gfodor/flatbuffers#bug/length-as-number-bigint",
     "messagepack": "^1.1.12",
-    "p2pcf": "^1.3.12",
+    "p2pcf": "^1.3.13",
     "sdp-transform": "^2.14.1",
     "y-protocols": "^1.0.5"
   },
