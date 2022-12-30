@@ -100,6 +100,8 @@ class P2PCFAdapter extends EventTarget {
         rtcPeerConnectionProprietaryConstraints,
         fastPollingRateMs: this.options.p2pcfFastPollingRate || 1500,
         slowPollingRateMs: this.options.p2pcfSlowPollingRate || 5000,
+        idlePollingAfterMs: this.options.p2pcfIdlePollingAfterMs || (2 * 60 * 60 * 1000), // By default, 2 hour idle timeout
+        idlePollingRateMs: this.options.p2pcfIdlePollingRateMs || Infinity,
         sdpTransform: sdpTransformConfigureCodecs
       }
 
